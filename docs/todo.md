@@ -28,3 +28,12 @@
 - [ ] 手势全量回归（两指滚动/双指右键/长按拖拽/双击拖拽 + 三角/按键栏边界）
 - [ ] 真机标定 speed 系数与 ramp（DESIGN §6.3）
 - [ ] 坐标映射调参 + 性能监控（主线程负载 / sendReport 迁移评估）
+
+## uvcpad-touch-align（触控区域 = 显示区域，2026-08-12）
+
+- [x] 触控层不再铺满全屏：MainActivity 布局监听 + `TransparentTouchLayer.alignToDisplayRect` 动态对齐到 AspectRatioTextureView 显示矩形（方案 A）
+- [x] 显示区域外（黑边/留白）触摸不响应、不产生 HID 事件（命中测试落在非 clickable 容器被丢弃）
+- [x] 分辨率切换（switchMode）/旋转/首次布局时触控区域同步（OnGlobalLayoutListener + setAspectRatio→requestLayout 触发点）
+- [x] 滑出显示区域的手势连续性：DOWN 定归属，MOVE 滑出仍归触控层，拖拽不丢失
+- [x] DESIGN.md §3.1/§3.2 更新；assembleDebug 构建通过 + git commit
+- [ ] 真机验证：黑边触摸无鼠标事件、1080p↔4:3 切换后触控区域跟随、拖拽滑出边界不断

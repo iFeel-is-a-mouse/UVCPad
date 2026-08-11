@@ -216,7 +216,7 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
 ```xml
 <FrameLayout id=rootLayout>                       <!-- 复制 hdmi2mp -->
     <FrameLayout id=cameraViewContainer/>         <!-- 底层：AUSBC 自动注入 AspectRatioTextureView -->
-    <com…touch.TransparentTouchLayer id=touchLayer/>  <!-- 中层：全屏透明，接收触摸，不绘制 -->
+    <com…touch.TransparentTouchLayer id=touchLayer/>  <!-- 中层：触控层，运行时对齐到显示区域（uvcpad-touch-align），不绘制 -->
     <FrameLayout id=topUiContainer>               <!-- 顶层：三角 + 按键栏 -->
         <com…ui.DropTriangleView id=dropTriangle/>    <!-- 顶部居中，事件豁免区 -->
         <com…ui.KeyBarPanel id=keyBar/>               <!-- 顶部滑出，默认 GONE，区域事件消费 -->
@@ -225,9 +225,15 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
 </FrameLayout>
 ```
 
+**触控层边界（uvcpad-touch-align，2026-08-12）：** `touchLayer` 在 XML 中保持全屏占位，但运行时
+被 MainActivity 收缩到**采集画面实际显示矩形**（= `AspectRatioTextureView` 的布局 bounds，见 §3.2 新节）；
+触控层是 `cameraViewContainer` 的**兄弟节点**而非子节点——AUSBC `initView()` 会对容器执行
+`removeAllViews()`，放进容器的 XML 子 View 会被清掉（AUSBC 3.6.0 源码确认）。
+
 **Z 序与触摸分发依据（Android 事件模型）：**
 - 触摸优先派发给**顶层可见 View**：三角/按键栏在 touchLayer 之上 → 落在其边界内的事件先到它们。
 - 事件流**归属权由 ACTION_DOWN 的目标 View 决定**：手指从触控层滑入三角区域，事件流仍归触控层（三角不会中途截胡）；从三角滑出同理归三角。→ 豁免区实现无需 `onInterceptTouchEvent`，只需各 View 正确处理自己拿到的事件流。
+- **显示区域外的触摸**（黑边/留白）：落在非 clickable 的 `cameraViewContainer` 上 → 框架直接丢弃，不产生任何 HID 事件（§3.2 新节）。
 
 ### 3.2 透明触控层（不挡画面、只收事件）
 
@@ -235,6 +241,45 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
 - 接收事件条件：`isEnabled=true` 且 `onTouchEvent` 返回 `true`（或设置 OnTouchListener 返回 true）；不做 `setClickable` 之外的额外状态，避免焦点/高亮。
 - `MainActivity` 在蓝牙连接成功后 `touchLayer.setGestureListener(viewListener)`；断开时置 null 并清空内部状态（防止向 null sender 发报告，见 §3.6）。
 - **触控板上不放任何可点击控件**（PROPOSAL §4.6）：全屏即手势区，点击 = tap→左键。
+
+### 3.2.1 触控区域 = 显示区域（uvcpad-touch-align，2026-08-12）
+
+**需求（iFeel 确认）：** 触控层不再铺满全屏，只覆盖采集画面实际显示的区域；显示区域外
+（黑边/留白）的触摸不响应、不产生任何 HID 鼠标事件；显示区域内触摸 → 正常手势（ViewListener 链路不变）。
+
+**方案：A（触控层布局 bounds 动态跟随显示区域）**，选它基于以下 AUSBC 3.6.0 源码事实：
+
+| 事实 | 源码位置 | 结论 |
+|---|---|---|
+| `AspectRatioTextureView.onMeasure` 按 `mAspectRatio`（= 视频宽高比）**fit-inside 自缩放**：取容器尺寸，超出比例的维度被缩掉，视图自身 bounds 精确等于画面比例 | libausbc widget 字节码 | **显示区域 = 相机视图的布局 bounds**，无需再按宽高比手工推算 |
+| `CameraActivity.initView()`：`container.removeAllViews()` + `addView(cameraView, LayoutParams(MATCH_PARENT, MATCH_PARENT, getGravity()))`；uvcpad `getGravity() = Gravity.CENTER` | CameraActivity 字节码 | 黑边落在容器上（视图居中）；**触控层不能放进容器**（会被 removeAllViews 清掉），只能做兄弟节点 |
+| `CameraClient` 在预览尺寸确定/`updateResolution()` 后调 `setAspectRatio(实际W, 实际H)` → `post { requestLayout() }` | CameraClient 字节码 | 分辨率切换（switchMode）会重新测量视图 → 布局变化 → 触控层同步点天然存在 |
+| `BaseActivity.onCreate`：`setContentView(getRootView())` → `initView()`（加入相机视图）早于 `MainActivity.onCreate` 的 `bindViews()` | BaseActivity 字节码 | 布局监听注册时相机视图已在容器中（`getChildAt(0)` 可用） |
+
+**机制：**
+- `touchLayer` 保持 rootLayout 直接子 View（Z 序在 cameraViewContainer 之上），XML 全屏占位。
+- `MainActivity.bindViews()` 给 `cameraViewContainer` 注册 `OnGlobalLayoutListener`；每次布局变化调
+  `syncTouchLayerBounds()`：取 `getChildAt(0)`（相机视图）的窗口坐标 − rootLayout 窗口坐标 →
+  `touchLayer.alignToDisplayRect(rect)` 写入 LayoutParams（leftMargin/topMargin + 精确 width/height）；
+  值未变化时直接返回（无谓重布局退化为空操作）。
+- `alignToDisplayRect` 是 `TransparentTouchLayer` 的公开方法（本需求唯一新增 API）。
+
+**同步触发点（显示区域变化的全部路径）：**
+1. **首次布局**：监听在首帧绘制前已注册 → 第一次布局后即对齐；
+2. **分辨率切换** `switchMode → updateResolution`：预览重启 → `setAspectRatio(新比例)` → `requestLayout`
+   → 相机视图重新测量 → 布局监听触发；
+3. **旋转/配置变更**：Activity 重建 → `bindViews` 重新注册监听 → 首布局即对齐；
+4. 相机视图未布局/不存在（尺寸 0）→ 触控层退化为 0×0，任何触摸落不到本层（保守兜底）。
+
+**边界处理：**
+- **显示区域外触摸**（黑边/留白）：命中测试落在非 clickable 的 `cameraViewContainer` → 事件被框架丢弃，
+  不产生任何 HID 事件（需求核心，方案 A 语义最干净——区域外根本不进触控层）；
+- **滑出区域的手势连续性**：Android 事件归属由 ACTION_DOWN 决定——DOWN 落在显示区域内 → 整个事件流
+  归触控层，手指滑出显示边界后 MOVE 仍持续派发给本层 → 拖拽/滚动不丢失（ViewListener 链路原样工作，
+  无需坐标过滤与状态机，这是选 A 而非 B 的关键理由）；
+- **DOWN 在区域外、滑入区域**：事件流归容器（DOWN 目标），持续被丢弃 → 不产生 HID 事件（合理：手势
+  起点在区域外不应激活）；
+- **M2 不受影响**：下拉三角/按键栏位于 rootLayout 顶层、与触控层无交集——本需求只约束触控手势层。
 
 ### 3.3 下拉三角事件豁免区
 

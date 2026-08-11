@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothHidDevice
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
@@ -17,6 +18,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
@@ -86,6 +88,16 @@ class MainActivity : CameraActivity() {
 
     private lateinit var errorText: TextView
     private lateinit var touchLayer: TransparentTouchLayer
+    private lateinit var rootLayout: View
+    private lateinit var cameraViewContainer: ViewGroup
+
+    /**
+     * [uvcpad-touch-align] 布局同步：每次布局变化（首次布局 / switchMode 分辨率切换 / 旋转重建）
+     * 把触控层收缩到采集画面实际显示矩形（= AspectRatioTextureView 的布局 bounds，DESIGN §3.2）。
+     */
+    private val touchAlignLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+        syncTouchLayerBounds()
+    }
 
     private lateinit var prefs: UvcpadPrefs
 
@@ -266,6 +278,11 @@ class MainActivity : CameraActivity() {
         BluetoothController.stopAutoReconnect()
         BluetoothController.statusListener = null
         CrashHandler.setActiveActivity(null)
+        // [uvcpad-touch-align]: remove the layout-sync listener so it never fires on a dead Activity
+        if (::cameraViewContainer.isInitialized) {
+            cameraViewContainer.viewTreeObserver
+                .removeOnGlobalLayoutListener(touchAlignLayoutListener)
+        }
         super.onDestroy()
     }
 
@@ -364,6 +381,14 @@ class MainActivity : CameraActivity() {
         // The error area scrolls vertically (content becomes scrollable once maxHeight caps it)
         errorText.movementMethod = ScrollingMovementMethod()
         touchLayer = findViewById(R.id.touchLayer)
+        rootLayout = findViewById(R.id.rootLayout)
+        cameraViewContainer = findViewById(R.id.cameraViewContainer)
+        // [uvcpad-touch-align]：AUSBC 的 AspectRatioTextureView 在 onMeasure 中按视频宽高比
+        // fit-inside 自缩放（getGravity()=CENTER 在容器内居中），其布局 bounds 就是显示区域；
+        // 注册全局布局监听，任何布局变化都触发触控层对齐（首次布局 / 分辨率切换 / 旋转重建）。
+        // 注意：触控层不能放进 cameraViewContainer —— AUSBC initView() 会对容器 removeAllViews()
+        // 清空 XML 子 View（AUSBC 3.6.0 源码确认，DESIGN §3.2）。
+        cameraViewContainer.viewTreeObserver.addOnGlobalLayoutListener(touchAlignLayoutListener)
     }
 
     /**
@@ -475,6 +500,39 @@ class MainActivity : CameraActivity() {
      */
     private fun teardownTouchLayer() {
         touchLayer.setGestureListener(null)
+    }
+
+    // ============ Touch-area alignment (uvcpad-touch-align: 触控区域 = 显示区域) ============
+
+    /**
+     * [uvcpad-touch-align] 把触控层对齐到采集画面实际显示矩形。
+     *
+     * 显示区域 = AspectRatioTextureView 的布局 bounds（AUSBC onMeasure 按视频宽高比 fit-inside
+     * 自缩放 + getGravity()=CENTER 居中，AUSBC 3.6.0 源码确认），相对 rootLayout 换算后写入触控层
+     * LayoutParams（margin + 精确尺寸；值未变化时 alignToDisplayRect 内部直接返回，无额外布局）。
+     *
+     * 边界处理：
+     * - 相机视图不存在/未布局（尺寸 0）→ 触控层退化为 0×0：任何触摸都落不到本层；
+     * - 显示区域外的触摸（黑边/留白）落在非 clickable 的 cameraViewContainer → 框架直接丢弃，
+     *   不产生任何 HID 事件；
+     * - 手势连续性：ACTION_DOWN 落在显示区域内 → 事件流归触控层（Android 归属模型），手指滑出
+     *   显示区域后 MOVE 仍持续派发给本层 → 拖拽不丢失（ViewListener 链路原样工作）。
+     */
+    private fun syncTouchLayerBounds() {
+        val cameraView = cameraViewContainer.getChildAt(0)
+        if (cameraView == null || cameraView.width <= 0 || cameraView.height <= 0) {
+            touchLayer.alignToDisplayRect(Rect(0, 0, 0, 0))
+            return
+        }
+        val camPos = IntArray(2)
+        val rootPos = IntArray(2)
+        cameraView.getLocationInWindow(camPos)
+        rootLayout.getLocationInWindow(rootPos)
+        val left = camPos[0] - rootPos[0]
+        val top = camPos[1] - rootPos[1]
+        touchLayer.alignToDisplayRect(
+            Rect(left, top, left + cameraView.width, top + cameraView.height)
+        )
     }
 
     // ============ Serial permissions (DESIGN §1.4, hdmi2mp serial mode extended) ============

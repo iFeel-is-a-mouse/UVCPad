@@ -34,3 +34,22 @@
 
 - **push 未执行**：github 仓库 iFeel-is-a-mouse/uvcpad 尚不存在（hdmi2mp/KeysJoy 均为独立仓库模式），remote 创建后补 push。
 - **真机联调未做**：需 MS2130 采集卡 + PC 蓝牙配对环境（todo.md 已列验收项）。
+
+## 触控区域 = 显示区域（uvcpad-touch-align，2026-08-12）
+
+**阶段 6 编码（coder）完成。** 需求：透明触控层不再铺满全屏，只覆盖采集画面实际显示区域；区域外触摸不响应、不产生 HID 事件。
+
+### 关键决策与实施记录
+
+1. **方案 A（布局 bounds 动态跟随）**，基于 AUSBC 3.6.0 字节码反编译事实：
+   - `AspectRatioTextureView.onMeasure` 按视频宽高比 fit-inside 自缩放 → 视图 bounds 即显示区域（无需手工按比例推算）；
+   - `CameraActivity.initView()` 对容器 `removeAllViews()` → 触控层不能放进 cameraViewContainer，保持 rootLayout 兄弟节点；
+   - `CameraClient.setAspectRatio(实际W/H)` → requestLayout → 分辨率切换天然产生布局变化，作为同步触发点。
+2. **实现**：MainActivity 给 cameraViewContainer 注册 OnGlobalLayoutListener → `syncTouchLayerBounds()`（相机视图窗口坐标 − rootLayout 窗口坐标）→ `TransparentTouchLayer.alignToDisplayRect(rect)` 写 LayoutParams（margin + 精确尺寸，值未变直接返回）；onDestroy 移除监听防泄漏。
+3. **边界处理**：区域外触摸落非 clickable 容器被框架丢弃（不产生 HID 事件）；DOWN 在区域内滑出 → 事件流仍归触控层（Android 归属模型）→ 拖拽不丢失；相机视图未布局 → 触控层退化为 0×0。
+4. **M2 不受影响**：三角/按键栏在 rootLayout 顶层，与触控层无交集。
+
+### 构建结果
+
+- `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL**。
+- commit：`[uvcpad-touch-align]`（见 git log）。

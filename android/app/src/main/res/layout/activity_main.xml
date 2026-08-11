@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- uvcpad M1 layout (DESIGN §3.1, M1 subset):
-     Z 序（下→上）：cameraViewContainer（UVC 画面）→ touchLayer（全屏透明触控层）→ errorText（错误提示，仅出错时可见）。
+     Z 序（下→上）：cameraViewContainer（UVC 画面）→ touchLayer（触控层，运行时对齐到显示区域）→ errorText（错误提示，仅出错时可见）。
+     [uvcpad-touch-align]：touchLayer 不再铺满全屏——MainActivity 在每次布局变化时把其 bounds
+     收缩到 AspectRatioTextureView 的实际显示矩形（显示区域 = 画面实际占用的矩形，DESIGN §3.2）。
      M2 将在此之上追加 topUiContainer（下拉三角 + 按键栏）。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootLayout"
@@ -14,8 +16,14 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- 全屏透明触控层：不绘制任何内容，仅接收触摸事件并转发给 ViewListener（蓝牙连接后挂载手势）。
-         位于 cameraViewContainer 之上 → 触摸优先派发到本层；蓝牙断开时卸载手势（DESIGN §3.2） -->
+    <!-- 触控层：不绘制任何内容，仅接收触摸事件并转发给 ViewListener（蓝牙连接后挂载手势）。
+         位于 cameraViewContainer 之上 → 显示区域内的触摸优先派发到本层。
+         [uvcpad-touch-align]：XML 里保持全屏占位，MainActivity 在每次布局变化（首次布局 /
+         分辨率切换 / 旋转重建）时把本层收缩到 AspectRatioTextureView 的显示矩形；显示区域外
+         （黑边/留白）的触摸落在非 clickable 的 cameraViewContainer 上被框架丢弃，不产生任何
+         HID 事件。蓝牙断开时卸载手势（DESIGN §3.2）。
+         注意：本层不能放进 cameraViewContainer —— AUSBC initView() 会 removeAllViews() 清空
+         容器内所有 XML 子 View（AUSBC 3.6.0 源码确认，DESIGN §3.2）。 -->
     <com.github.ifeel.uvcpad.touch.TransparentTouchLayer
         android:id="@+id/touchLayer"
         android:layout_width="match_parent"

@@ -2,16 +2,22 @@ package com.github.ifeel.uvcpad.touch
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import com.github.ifeel.uvcpad.bt.listeners.ViewListener
 
 /**
- * 全屏透明触控层（DESIGN §3.2 新建）。
+ * 透明触控层（DESIGN §3.2 新建；[uvcpad-touch-align] 需求：触控区域 = 显示区域）。
  *
  * 职责：叠加在采集画面上，视觉上完全透出底层画面（不绘制任何内容），
  * 把触摸事件原样转发给手势引擎 [ViewListener]（蓝牙连接后由 MainActivity 挂载）。
+ *
+ * 触控区域：[alignToDisplayRect] 把本层收缩到采集画面实际显示矩形（= AspectRatioTextureView
+ * 的布局 bounds，AUSBC 按视频宽高比 fit-inside 自缩放）。显示区域外的触摸落在非 clickable 的
+ * cameraViewContainer 上被框架直接丢弃 → 不产生任何 HID 事件；显示区域内的触摸才进入本层。
  *
  * 挂载/卸载：
  * - 蓝牙连接成功 → [setGestureListener] 挂载手势引擎；
@@ -31,6 +37,32 @@ class TransparentTouchLayer @JvmOverloads constructor(
     /** 蓝牙连接成功后挂载手势引擎；断开时传入 null 卸载（DESIGN §3.7：先卸监听再置空 sender） */
     fun setGestureListener(listener: ViewListener?) {
         gestureListener = listener
+    }
+
+    /**
+     * 触控区域对齐（[uvcpad-touch-align]）：把本层收缩到采集画面实际显示矩形。
+     *
+     * [rect] 为相对父容器（rootLayout）的坐标；由 MainActivity 在每次布局变化后调用
+     * （首次布局 / switchMode 分辨率切换 / 旋转重建，见 DESIGN §3.2）。零尺寸
+     * （width/height = 0）表示暂无可对齐的显示区域（相机未打开/视图未布局）：触控层退化为
+     * 0×0，任何触摸都落不到本层 → 不响应、不产生 HID 事件。
+     *
+     * 值未变化时直接返回，避免无谓的重新布局（布局监听高频触发时会退化为空操作）。
+     */
+    fun alignToDisplayRect(rect: Rect) {
+        val lp = layoutParams as? FrameLayout.LayoutParams ?: return
+        val width = rect.width()
+        val height = rect.height()
+        if (lp.leftMargin == rect.left && lp.topMargin == rect.top &&
+            lp.width == width && lp.height == height
+        ) {
+            return
+        }
+        lp.leftMargin = rect.left
+        lp.topMargin = rect.top
+        lp.width = width
+        lp.height = height
+        layoutParams = lp
     }
 
     /** 不绘制任何内容（透明层只收事件不画图，DESIGN §3.2） */
