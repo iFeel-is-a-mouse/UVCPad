@@ -1,55 +1,87 @@
 # uvcpad 开发旅程（journey）
 
-## M1 骨架整合（2026-08-11）
+> 简记 uvcpad 从需求到 M1 完成的开发历程。砍掉过程琐碎，留下决策与结论。
+> 关联：`docs/PROPOSAL.md`（需求）、`docs/DESIGN.md`（设计）、`docs/todo.md`（M2 待办）。
 
-**阶段 6 编码（coder）完成。** 严格按 DESIGN.md 实施，复用两项目真实源码。
+## 时间线总览
 
-### 关键决策与实施记录
+| 阶段 | 日期 | 产出 |
+|---|---|---|
+| M0 需求冻结 | 2026-08-11 | PROPOSAL.md 拍板（Q1–Q7 全部确认，需求边界冻结） |
+| D3 设计评审 | 2026-08-11 | DESIGN.md 通过（P1/P2 已修，§3.6 三组输入→输出示例） |
+| M1 编码 | 2026-08-11 | commit **4ed1f58**（骨架 + 显示 + 蓝牙 + 触控层） |
+| 双验证 | 2026-08-11 → 12 | tester + reviewer 验证，出 P2 条目（构建/权限/代码质量） |
+| 评审修复 | 2026-08-12 | commit **4abdc04**（onResume 双重 init 合并；CrashHandler 品牌字样） |
+| 终审 | 2026-08-12 | auditor 终审，出 P3 条目 + 发现首次启动蓝牙 init 缺失 |
+| P2 修复 | 2026-08-12 | commit **2cf23ba**（首次启动 Android 12+ 蓝牙 HID 注册不生效） |
+| 触控对齐需求 | 2026-08-12 | iFeel 拍板：触控区域 = 显示区域（区域外不响应） |
+| 触控对齐实现 | 2026-08-12 | commit **2bd498b** + **6d36a24**（评审修复） |
+| M1 完成 | 2026-08-12 | main 决策：M1 ✅（待真机联调），M2 待启动，墨水屏适配列第一优先级 |
 
-1. **工程骨架**：照抄 hdmi2mp/android 的 gradle 配置（settings/build/gradle.properties/wrapper/local.properties/.gitignore），
-   app/build.gradle 改 namespace/applicationId=com.github.ifeel.uvcpad、minSdk 23→28、jvmTarget 17（对齐 KeysJoy 源码，DESIGN §1.2）。
-2. **显示链路**：getCameraRequest/getCameraView/getCameraViewContainer/getGravity/onCameraState/串行权限/USB 提示/hideSystemUi 从 hdmi2mp 原样保留。
-3. **蓝牙链路**：BluetoothController 复制 + DESIGN §4.2 三处改造（描述符 MOUSE_RELATIVE_WITH_SCROLL、SUBCLASS1_MOUSE、设备名 "uvcpad" + 提示串 "Search 'uvcpad'…"）；
-   DescriptorCollection 仅保留 MOUSE_RELATIVE_WITH_SCROLL + MOUSE_RELATIVE_WITH_SCROLL_NOTSMOOTH（字节逐字提取，diff 验证）；
-   reports/senders/listeners/SpeedLevel 原样复制（仅包名/import 改）。
-4. **透明触控层**：新建 TransparentTouchLayer（不绘制、onTouchEvent 转发 ViewListener）；setupTouchLayer/teardownTouchLayer 按 DESIGN §3.5/§3.7 装配。
-5. **联调自测**：`:app:assembleDebug` 成功（APK 20MB，minSdk 28/targetSdk 36 校验通过）；无真机，做静态自检（§3.5 装配逐行核对 / 红线扫描无键盘代码 / §4.2 改造点核对）。
+## 关键 commit 对照
 
-### M1 适应性改动（均已在 MainActivity 注释与报告说明）
+| commit | 内容 |
+|---|---|
+| 4ed1f58 | M1 骨架整合：hdmi2mp 显示链路 + KeysJoy 鼠标触控链路合体（工程骨架/显示链路/蓝牙链路/透明触控层，assembleDebug 通过） |
+| 4abdc04 | M1 评审修复：onResume 双重 init 合并单路径；CrashHandler 品牌字样 hdmi2mp→uvcpad |
+| 2cf23ba | P2 修复：首次启动（Android 12+）蓝牙 HID 注册不生效——权限串行链尾补触发 init（permissionDialogShown 标志） |
+| 2bd498b | 触控区域 = 显示区域：触控层动态对齐 AspectRatioTextureView 显示矩形（方案 A） |
+| 6d36a24 | 触控对齐评审修复：P1 修正 DESIGN §3.2.1 时序描述；P2 getChildAt(0) 加 TextureView 类型防御；P3 注释布局循环 |
 
-- **改造点① toolbar 删除**：btnMode1080p/btnMode4by3/btnCapture/btnExit/topOverlay 及其自动隐藏计时器整体删除（M1 触控板不放可点击按钮）。
-  `switchMode` 因 toolbar 删除被迫去掉 `button: TextView` 参数与 `highlightMode()`（M2 按键栏按钮将直接调用 switchMode）。
-- **statusText 移除**：DESIGN §3.1 最终布局无独立 statusText（状态并入 M2 按键栏），M1 布局仅 cameraViewContainer + touchLayer + errorText；
-  `onCameraState OPENED` 改为 toast 呈现连接状态，ERROR 走 errorText。
-- **setupListeners 留白**：M1 无按键栏，蓝牙装配放在 onStart 回调（KeysJoy 模式，DESIGN §3.7），M2 再引入 setupListeners 接按键栏。
-- **setScanMode 编译适配**：compileSdk 36 的 android.jar 不含隐藏 API `BluetoothAdapter.setScanMode`，改用反射（与 KeysJoy SelectDeviceActivity "Make Discoverable" 同一模式），行为不变。
-- **CRLF 修正**：KeysJoy 部分源码文件为 CRLF 行尾，初次 sed 包名替换漏掉 ScrollableTrackpadMouseReport.kt，构建报 Unresolved reference 后已用 perl 修正。
+## M0 需求冻结（2026-08-11）
 
-### 构建结果
+- **一句话需求**：采集卡画面显示在 pad + pad 触摸经蓝牙 HID 控制 PC + 触控层透明透出采集内容（整合 hdmi2mp 与 KeysJoy）。
+- **关键拍板**（iFeel）：Q1 单 App 整合 / Q2 **纯触控板不含键盘** / Q3 横屏唯一形态 / Q4 保留截图 / Q5 minSdk 28 / Q6 显示流畅优先、触控延迟 ≤100ms / Q7 按键栏 4s 自动隐藏可配置。
+- **产出**：docs/PROPOSAL.md，需求边界冻结，后续变更需重新评估。
 
-- `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL**（35 tasks；仅 KeysJoy 原样代码的 deprecation 警告：getDefaultAdapter/GestureDetectorCompat/VIBRATOR_SERVICE/inline class）。
-- APK：app/build/outputs/apk/debug/app-debug.apk（20,434,126 B；classes×9 + libUVCCamera/libuvc/libusb/libjpeg-turbo 原生库）。
+## D3 设计评审（2026-08-11）
 
-### M1 遗留问题
+- DESIGN.md 全部复用点溯源至两项目真实源码：AUSBC 3.6.0 字节码反编译确认 `CameraActivity.initView()` 会 `removeAllViews()`、`AspectRatioTextureView` fit-inside 自缩放——这两条事实后来直接支撑了触控对齐方案 A。
+- 评审通过，P1/P2 已修；坐标→HID 报告映射给出三组输入→输出示例（§3.6），供 reviewer 逐组验证。
 
-- **push 未执行**：github 仓库 iFeel-is-a-mouse/uvcpad 尚不存在（hdmi2mp/KeysJoy 均为独立仓库模式），remote 创建后补 push。
-- **真机联调未做**：需 MS2130 采集卡 + PC 蓝牙配对环境（todo.md 已列验收项）。
+## M1 编码（2026-08-11，commit 4ed1f58）
 
-## 触控区域 = 显示区域（uvcpad-touch-align，2026-08-12）
+- **工程骨架**：照抄 hdmi2mp/android gradle 配置（AGP 8.10.1 + Kotlin 2.2.10 + Gradle 9.3.1 + AUSBC 3.6.0），包名 `com.github.ifeel.uvcpad`，minSdk 28 / targetSdk 36。
+- **显示链路**：getCameraRequest（1920×1080/MJPEG/OPENGL/captureRawImage）/getCameraView/onCameraState/串行权限/USB 提示 原样保留自 hdmi2mp。
+- **蓝牙链路**：BluetoothController 三处改造（`MOUSE_RELATIVE_WITH_SCROLL` 描述符、`SUBCLASS1_MOUSE`、设备名 "uvcpad" + 提示串）；DescriptorCollection 仅留鼠标描述符（字节逐字提取，diff 验证）；reports/senders/listeners/SpeedLevel 原样复制。
+- **透明触控层**：新建 TransparentTouchLayer（不绘制、onTouchEvent 转发 ViewListener）；连接挂载 / 断开先卸监听再置空。
+- **适应性改动**：toolbar 删除（switchMode 去 button 参数，M2 按键栏直接调用）；statusText 移除改 toast；`setScanMode` 改反射（compileSdk 36 无隐藏 API）；CRLF 行尾修正（ScrollableTrackpadMouseReport.kt 包名替换漏网）。
+- **构建结果**：`./gradlew :app:assembleDebug` BUILD SUCCESSFUL（APK 20MB；仅 KeysJoy 原样代码 deprecation 警告）。
 
-**阶段 6 编码（coder）完成。** 需求：透明触控层不再铺满全屏，只覆盖采集画面实际显示区域；区域外触摸不响应、不产生 HID 事件。
+## 双验证与评审修复（2026-08-11 → 08-12）
 
-### 关键决策与实施记录
+- **tester**：assembleDebug 验证；记录 setScanMode 反射、3 处 deprecation 告警、无测试目录、AUSBC merge RECORD_AUDIO 待处理。
+- **reviewer**：分辨率硬编码 1080p 待进菜单；非首次启动仅相机权限撤销时 getSender 双重注册边界。
+- **修复 commit 4abdc04**：onResume 双重 init 合并单路径；CrashHandler 品牌字样 hdmi2mp→uvcpad。
 
-1. **方案 A（布局 bounds 动态跟随）**，基于 AUSBC 3.6.0 字节码反编译事实：
-   - `AspectRatioTextureView.onMeasure` 按视频宽高比 fit-inside 自缩放 → 视图 bounds 即显示区域（无需手工按比例推算）；
-   - `CameraActivity.initView()` 对容器 `removeAllViews()` → 触控层不能放进 cameraViewContainer，保持 rootLayout 兄弟节点；
-   - `CameraClient.setAspectRatio(实际W/H)` → requestLayout → 分辨率切换天然产生布局变化，作为同步触发点。
-2. **实现**：MainActivity 给 cameraViewContainer 注册 OnGlobalLayoutListener → `syncTouchLayerBounds()`（相机视图窗口坐标 − rootLayout 窗口坐标）→ `TransparentTouchLayer.alignToDisplayRect(rect)` 写 LayoutParams（margin + 精确尺寸，值未变直接返回）；onDestroy 移除监听防泄漏。
-3. **边界处理**：区域外触摸落非 clickable 容器被框架丢弃（不产生 HID 事件）；DOWN 在区域内滑出 → 事件流仍归触控层（Android 归属模型）→ 拖拽不丢失；相机视图未布局 → 触控层退化为 0×0。
-4. **M2 不受影响**：三角/按键栏在 rootLayout 顶层，与触控层无交集。
+## 终审与 P2 修复（2026-08-12）
 
-### 构建结果
+- **auditor 终审发现关键缺陷**：首次安装授予全部权限后无路径再触发蓝牙 init——PC 搜不到 "uvcpad"，需切后台回前台（onResume wasInBackground 路径）才恢复。
+- **根因**：onStart 因权限未授予提前 return；onResume 的 init 在授权前执行，getProfileProxy 缺 BLUETOOTH_CONNECT 静默失败；权限链尾无动作。
+- **修复 commit 2cf23ba（最小改动）**：onStart 守卫式 init 提取为 `initBluetooth()`；`permissionDialogShown` 标志（4 个 launch 点置位）；链尾两处终结点调 `maybeInitBluetoothAfterFirstLaunch()`，仅本次确实弹过对话框才补 init，非首次启动不重复触发。
+- **auditor P3 记录**：CrashHandler KDoc 旧引用 / BluetoothController 单例监听未清空（KeysJoy 同款）/ root build.gradle 注释残留 hdmi2mp（→ todo.md）。
 
-- `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL**。
-- commit：`[uvcpad-touch-align]`（见 git log）。
+## 触控对齐需求与实现（2026-08-12，commit 2bd498b + 6d36a24）
+
+- **需求（iFeel）**：透明触控层不再铺满全屏，只覆盖采集画面实际显示区域；显示区域外（黑边/留白）触摸不响应、不产生任何 HID 事件。
+- **方案 A（布局 bounds 动态跟随）**，依据 AUSBC 3.6.0 源码事实：相机视图 bounds 即显示区域（fit-inside）；容器会被 `removeAllViews()` → 触控层保持 rootLayout 兄弟节点；`setAspectRatio → requestLayout` 作为分辨率切换的天然同步点。
+- **实现**：MainActivity 注册 OnGlobalLayoutListener → `syncTouchLayerBounds()` → `TransparentTouchLayer.alignToDisplayRect(rect)`；值未变直接返回；onDestroy 移除监听防泄漏；相机视图未布局时触控层退化 0×0。
+- **边界语义（方案 A 优势）**：区域外触摸落非 clickable 容器被框架丢弃；DOWN 定归属 → 滑出显示区域手势不丢失；M2 三角/按键栏在顶层与触控层无交集。
+- **评审修复 6d36a24**：P1 修正 DESIGN §3.2.1 时序描述与代码一致；P2 `getChildAt(0)` 加 TextureView 类型防御；P3 注释 layoutParams 无害布局循环（最多 2 次触发）。
+
+## M1 完成（2026-08-12）
+
+- **main 决策**：M1 ✅ 完成（编码 + 构建通过，含触控区域=显示区域落地），**待真机联调**；M2 待启动。
+- **新增第一优先级：墨水屏适配**——MatePad Paper 真机验证 UVC 兼容性 + 快速模式画面可接受度；分辨率降到墨水屏舒适档；必要时启用流畅模式/残影优化（→ todo.md）。
+- **遗留**：push 上游（github 仓库未建）；真机联调（需采集卡 + PC 配对环境，验收 4 项见 todo.md）。
+
+## M2 交互入口落地（2026-08-12，commit uvcpad-m2-entry）
+
+- **任务 A：平板主题图标**：adaptive icon（`mipmap-anydpi-v26/ic_launcher.xml` + `ic_launcher_background` 深蓝 #0D47A1 + `ic_launcher_foreground` 平板轮廓：白色圆角边框 + 青色屏幕 + 底部 home 条 + 屏上触点）；manifest `android:icon` 改 `@mipmap/ic_launcher`；删除旧 hdmi2mp 显示器图标 `drawable/ic_launcher.xml`。minSdk 28 ≥ 26，全设备自适应图标，无需密度 PNG。
+- **任务 B：下拉三角 + 完整按键栏（DESIGN §3.3/§3.4）**：
+  - `ui/DropTriangleView`：顶部居中 48dp 热区，半透明白三角 + 阴影（采集画面可见）；DOWN 消费（事件豁免，点三角不产生鼠标报告）、MOVE 出热区标记取消、UP 热区内触发 onToggle。
+  - `ui/KeyBarPanel` + `ui/KeyBarController`：横向顶栏（速度/蓝牙+设备切换/自动配对/分辨率/截图/退出，**无键盘项** Q2 ✅）；非按钮区域 onTouchEvent 消费（按钮 clickable 各自消费）→ 菜单区触摸不进触控手势层；4s 自动隐藏（`auto_hide_ms` 读 UvcpadPrefs，默认 4000）；show/hide 动画 + hideGeneration 防竞态（hdmi2mp 模式）；展开期间栏外仍是触控板。
+  - `MainActivity`：三角 toggle → 控制器；按钮接线——速度循环写 `speed_level` + 更新 `viewListener.mouseSpeed/scrollSpeed`；蓝牙点击连接/断开 + 长按 `showDeviceSwitcher()`（KeysJoy 复制，含 Make Discoverable）；自动配对 🔗（autoPairFlag + startAutoReconnect/stopAutoReconnect）；分辨率 1080p↔4:3（switchMode 复用，失败回滚文案不变）；截图 📷；退出 ⏻。
+  - 任意触摸（三角/按键栏/触控层）重置自动隐藏计时：`TransparentTouchLayer` 增 `onAnyTouch` 回调（最小改动）。
+- **布局**：`activity_main.xml` 增 `topUiContainer`（keyBar 在前、dropTriangle 在后 → 三角在上），Z 序在触控层之上；初始状态三角可见、按键栏 GONE。
+- **构建**：`./gradlew :app:assembleRelease :app:assembleDebug` 双 BUILD SUCCESSFUL——release arm64 精简版 4.0MB（4,232,690 B）、debug universal 19.5MB（20,474,453 B）；APK 内确认新图标资源（mipmap-anydpi-v26/ic_launcher + drawable 前后景）。

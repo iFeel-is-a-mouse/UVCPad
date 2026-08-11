@@ -15,4 +15,18 @@
     <string name="bt_permission_denied">Bluetooth permission not granted. The pad cannot register as a HID device. Please grant it in system settings</string>
     <string name="location_permission_denied">Location permission not granted. Discovery on this Android version needs it; already-paired devices still work</string>
     <string name="bt_disabled_hint">Bluetooth is disabled. Please enable it to use the pad as a HID touchpad</string>
+    <!-- M2 按键栏（DESIGN §3.4；不含任何键盘设置项，Q2 ✅） -->
+    <string name="keybar_speed">Speed: %1$s</string>
+    <string name="keybar_bt_connected">🖥 %1$s</string>
+    <string name="keybar_bt_default">📡 BT</string>
+    <string name="keybar_bt_connecting">Connecting…</string>
+    <string name="keybar_bt_disconnected">Disconnected</string>
+    <string name="keybar_bt_no_device">No paired device</string>
+    <string name="keybar_bt_switching">Switching to %1$s…</string>
+    <string name="keybar_auto_pair_on">Auto-pair ON</string>
+    <string name="keybar_auto_pair_off">Auto-pair OFF</string>
+    <string name="keybar_popup_connected">Connected: %1$s</string>
+    <string name="keybar_popup_no_device">No device connected</string>
+    <string name="keybar_popup_make_discoverable">📡 Make Discoverable</string>
+    <string name="keybar_popup_no_paired">No paired devices</string>
 </resources>

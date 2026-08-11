@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- uvcpad adaptive launcher icon (tablet theme, M2).
+     minSdk 28 ≥ API 26 → adaptive icons are supported on every device, no PNG density
+     fallbacks needed. Foreground = tablet silhouette, background = deep blue. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

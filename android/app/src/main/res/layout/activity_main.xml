@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- uvcpad M1 layout (DESIGN §3.1, M1 subset):
-     Z 序（下→上）：cameraViewContainer（UVC 画面）→ touchLayer（触控层，运行时对齐到显示区域）→ errorText（错误提示，仅出错时可见）。
+<!-- uvcpad M2 layout (DESIGN §3.1):
+     Z 序（下→上）：cameraViewContainer（UVC 画面）→ touchLayer（触控层，运行时对齐到显示区域）
+     → topUiContainer（下拉三角 + 按键栏，M2 交互入口）→ errorText（错误提示，仅出错时可见）。
      [uvcpad-touch-align]：touchLayer 不再铺满全屏——MainActivity 在每次布局变化时把其 bounds
-     收缩到 AspectRatioTextureView 的实际显示矩形（显示区域 = 画面实际占用的矩形，DESIGN §3.2）。
-     M2 将在此之上追加 topUiContainer（下拉三角 + 按键栏）。 -->
+     收缩到 AspectRatioTextureView 的实际显示矩形（显示区域 = 画面实际占用的矩形，DESIGN §3.2）。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootLayout"
     android:layout_width="match_parent"
@@ -28,6 +28,153 @@
         android:id="@+id/touchLayer"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <!-- M2: 顶部交互区（DESIGN §3.1）——唯一常驻 UI 下拉三角 + 自动隐藏按键栏。
+         Z 序在触控层之上：落在三角/按键栏边界内的事件先派发到本区，不穿透触控手势层
+         （M2 验收关键项：点三角/点菜单按钮不产生鼠标报告，DESIGN §3.3/§3.4）。
+         三角在上（XML 后者先派发）：按键栏展开时三角仍可见、仍可点击（toggle 收起）。 -->
+    <FrameLayout
+        android:id="@+id/topUiContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top">
+
+        <!-- 按键栏：横向顶栏（参考 hdmi2mp topOverlay 样式），顶部滑出，默认 GONE；
+             KeyBarController 控制显隐/4s 自动隐藏；区域事件消费（DESIGN §3.4）。
+             按钮集合不含任何键盘设置项（Q2 ✅）：速度 / 蓝牙 / 自动配对 / 分辨率 / 截图 / 退出。 -->
+        <com.github.ifeel.uvcpad.ui.KeyBarPanel
+            android:id="@+id/keyBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/overlay_bg"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone">
+
+            <!-- 速度：1️⃣–5️⃣ 循环（SpeedLevel，写 prefs "speed_level"，更新 viewListener.mouseSpeed/scrollSpeed） -->
+            <TextView
+                android:id="@+id/btnSpeed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_btn"
+                android:clickable="true"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="4️⃣"
+                android:textColor="@color/white"
+                android:textSize="16sp" />
+
+            <!-- 蓝牙：显示设备名/状态；点击连接/断开；长按 → 多设备切换（showDeviceSwitcher） -->
+            <TextView
+                android:id="@+id/btnBt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_btn"
+                android:clickable="true"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="📡"
+                android:textColor="@color/white"
+                android:textSize="13sp" />
+
+            <!-- 自动配对 🔗：切换 autoPairFlag + startAutoReconnect/stopAutoReconnect -->
+            <TextView
+                android:id="@+id/btnAutoPair"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_btn"
+                android:clickable="true"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="🔗"
+                android:textColor="@color/white"
+                android:textSize="16sp" />
+
+            <!-- 分辨率：1080p ↔ 4:3（switchMode 复用现有，按钮文案随 currentMode 更新） -->
+            <TextView
+                android:id="@+id/btnMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_btn"
+                android:clickable="true"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="1080p"
+                android:textColor="@color/white"
+                android:textSize="13sp" />
+
+            <!-- 截图 📷：captureJpg()（含 MediaStore 导入） -->
+            <TextView
+                android:id="@+id/btnCapture"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_btn"
+                android:clickable="true"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="📷"
+                android:textColor="@color/white"
+                android:textSize="16sp" />
+
+            <!-- 弹性空隙：把退出按钮推到最右（hdmi2mp 惯例），同时让三角（顶部居中）
+                 落在按键栏的空隙上方，展开时三角仍可点击收起 -->
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- 退出 ⏻：清理 + finish（onDestroy → AUSBC clear() 释放 UVC） -->
+            <TextView
+                android:id="@+id/btnExit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_btn"
+                android:clickable="true"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="⏻"
+                android:textColor="@color/white"
+                android:textSize="16sp" />
+        </com.github.ifeel.uvcpad.ui.KeyBarPanel>
+
+        <!-- 下拉三角：唯一常驻 UI，顶部居中，热区 48dp×48dp；事件豁免区（DESIGN §3.3）
+             在按键栏之上（XML 后者先派发）→ 按键栏展开期间三角仍可见、仍可 toggle 收起 -->
+        <com.github.ifeel.uvcpad.ui.DropTriangleView
+            android:id="@+id/dropTriangle"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="top|center_horizontal" />
+    </FrameLayout>
 
     <!-- Error/notification area (diagnostics): initially hidden; shown by showError() on errors.
          Kept from hdmi2mp verbatim (errorText 独立于工具栏，不随自动隐藏计时消失，便于用户阅读/拍摄) -->

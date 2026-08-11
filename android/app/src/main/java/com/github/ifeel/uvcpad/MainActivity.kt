@@ -4,6 +4,7 @@ import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -16,11 +17,13 @@ import android.os.Environment
 import android.text.method.ScrollingMovementMethod
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.Menu
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.view.WindowManager
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +36,9 @@ import com.github.ifeel.uvcpad.bt.SpeedLevel
 import com.github.ifeel.uvcpad.bt.listeners.ViewListener
 import com.github.ifeel.uvcpad.bt.senders.RelativeMouseSender
 import com.github.ifeel.uvcpad.touch.TransparentTouchLayer
+import com.github.ifeel.uvcpad.ui.DropTriangleView
+import com.github.ifeel.uvcpad.ui.KeyBarController
+import com.github.ifeel.uvcpad.ui.KeyBarPanel
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.base.CameraActivity
 import com.jiangdg.ausbc.camera.bean.CameraRequest
@@ -53,11 +59,15 @@ import java.util.Locale
  * 1. Display chain (from hdmi2mp, kept verbatim): extends AUSBC CameraActivity; after a USB
  *    device is plugged in, it automatically requests permission and opens the UVC camera;
  *    OPENGL rendering on AspectRatioTextureView, 1920×1080 / 1872×1404 presets, screenshot
- *    pipeline kept (key-bar entry lands in M2).
+ *    pipeline kept (key-bar entry, M2).
  * 2. Touch chain (from KeysJoy, mouse-only): Bluetooth HID registered as a mouse
  *    (BluetoothController, DESIGN §4.2); once connected, the full-screen TransparentTouchLayer
  *    is wired to the ViewListener gesture engine; on disconnect the listener is detached
  *    before anything else (DESIGN §3.7).
+ * 3. M2 interaction entry (DESIGN §3.3/§3.4): drop triangle (sole persistent UI) toggles the
+ *    auto-hiding key bar (speed / bluetooth+device switcher / auto-pair / resolution /
+ *    screenshot / exit, no keyboard items); triangle & key-bar areas consume their own touch
+ *    events so they never produce mouse reports (M2 acceptance key).
  *
  * M1 adaptations vs hdmi2mp MainActivity (all documented in journey.md):
  * - 改造点① toolbar buttons removed (btnMode1080p/btnMode4by3/btnCapture/btnExit/topOverlay
@@ -92,6 +102,17 @@ class MainActivity : CameraActivity() {
     private lateinit var rootLayout: View
     private lateinit var cameraViewContainer: ViewGroup
 
+    // ============ M2: drop triangle + key bar (DESIGN §3.3/§3.4) ============
+    private lateinit var dropTriangle: DropTriangleView
+    private lateinit var keyBar: KeyBarPanel
+    private lateinit var keyBarController: KeyBarController
+    private lateinit var btnSpeed: TextView
+    private lateinit var btnBt: TextView
+    private lateinit var btnAutoPair: TextView
+    private lateinit var btnMode: TextView
+    private lateinit var btnCapture: TextView
+    private lateinit var btnExit: TextView
+
     /**
      * [uvcpad-touch-align] 布局同步：每次布局变化（首次布局 / switchMode 分辨率切换 / 旋转重建）
      * 把触控层收缩到采集画面实际显示矩形（= AspectRatioTextureView 的布局 bounds，DESIGN §3.2）。
@@ -104,6 +125,9 @@ class MainActivity : CameraActivity() {
 
     /** Speed preset applied to the gesture engine at connection time (DESIGN §3.6: level 4 = 1.0f default) */
     private var currentSpeedLevel: SpeedLevel = SpeedLevel.DEFAULT
+
+    /** 当前手势引擎引用：速度按钮实时更新 mouseSpeed/scrollSpeed（DESIGN §3.4）；连接时创建、断开时置空 */
+    private var viewListener: ViewListener? = null
 
     // Whether the USB permission guidance hint is currently shown: avoids spamming toasts on
     // every attach intent; cleared as soon as the user grants permission (from hdmi2mp verbatim)
@@ -278,6 +302,10 @@ class MainActivity : CameraActivity() {
         // DESIGN §3.7: stop auto-reconnect + clear the status listener + drop the crash-dialog ref
         BluetoothController.stopAutoReconnect()
         BluetoothController.statusListener = null
+        // M2: 清除按键栏自动隐藏计时器与动画（hdmi2mp: removeCallbacksAndMessages 模式）
+        if (::keyBarController.isInitialized) {
+            keyBarController.destroy()
+        }
         CrashHandler.setActiveActivity(null)
         // [uvcpad-touch-align]: remove the layout-sync listener so it never fires on a dead Activity
         if (::cameraViewContainer.isInitialized) {
@@ -390,6 +418,25 @@ class MainActivity : CameraActivity() {
         // 注意：触控层不能放进 cameraViewContainer —— AUSBC initView() 会对容器 removeAllViews()
         // 清空 XML 子 View（AUSBC 3.6.0 源码确认，DESIGN §3.2）。
         cameraViewContainer.viewTreeObserver.addOnGlobalLayoutListener(touchAlignLayoutListener)
+
+        // ============ M2: 下拉三角 + 按键栏装配（DESIGN §3.3/§3.4） ============
+        dropTriangle = findViewById(R.id.dropTriangle)
+        keyBar = findViewById(R.id.keyBar)
+        keyBarController = KeyBarController(keyBar, prefs.autoHideMs)
+        btnSpeed = findViewById(R.id.btnSpeed)
+        btnBt = findViewById(R.id.btnBt)
+        btnAutoPair = findViewById(R.id.btnAutoPair)
+        btnMode = findViewById(R.id.btnMode)
+        btnCapture = findViewById(R.id.btnCapture)
+        btnExit = findViewById(R.id.btnExit)
+
+        // 三角点击 → 按键栏显隐 toggle（已展开→收起，收起即重置计时，DESIGN §3.3）
+        dropTriangle.onToggle = { keyBarController.toggle() }
+        // 任意触摸重置自动隐藏计时（DESIGN §3.4）：按键栏非按钮区域 + 触控层
+        keyBar.onAreaTouch = { keyBarController.resetAutoHideTimer() }
+        touchLayer.onAnyTouch = { keyBarController.resetAutoHideTimer() }
+
+        setupKeyBarListeners()
     }
 
     /**
@@ -491,7 +538,10 @@ class MainActivity : CameraActivity() {
             it.mouseSpeed = currentSpeedLevel.mouse
             it.scrollSpeed = currentSpeedLevel.scroll
         }
+        viewListener = vListener
         touchLayer.setGestureListener(vListener)
+        // M2: 连接后刷新蓝牙按钮文案（设备名/已连接）
+        updateBtButton()
     }
 
     /**
@@ -500,7 +550,195 @@ class MainActivity : CameraActivity() {
      * dropping the listener releases the sender with it; no report can be sent to a dead host.
      */
     private fun teardownTouchLayer() {
+        viewListener = null
         touchLayer.setGestureListener(null)
+        // M2: 断开后刷新蓝牙按钮文案
+        updateBtButton()
+    }
+
+    // ============ M2: key bar wiring (DESIGN §3.4) ============
+
+    /**
+     * M2 按键栏按钮接线（DESIGN §3.4 表格；按钮集合不含任何键盘设置项，Q2 ✅）。
+     * 每个按钮处理前先重置自动隐藏计时（与 hdmi2mp "每个按钮先 showToolbar()" 同模式：
+     * 点击按钮 = 交互，按键栏保持展开并重新计时）。
+     */
+    private fun setupKeyBarListeners() {
+        // --- 速度：1️⃣–5️⃣ 循环（KeysJoy SelectDeviceActivity.setupToolbar 逻辑）---
+        btnSpeed.text = currentSpeedLevel.emoji
+        btnSpeed.setOnClickListener {
+            keyBarController.resetAutoHideTimer()
+            val nextLevel = (currentSpeedLevel.level % 5) + 1
+            currentSpeedLevel = SpeedLevel.forLevel(nextLevel)
+            prefs.speedLevel = nextLevel
+            btnSpeed.text = currentSpeedLevel.emoji
+            viewListener?.let {
+                it.mouseSpeed = currentSpeedLevel.mouse
+                it.scrollSpeed = currentSpeedLevel.scroll
+            }
+            toast(getString(R.string.keybar_speed, currentSpeedLevel.emoji))
+        }
+
+        // --- 蓝牙：点击连接/断开；长按 → 多设备切换 showDeviceSwitcher（KeysJoy 逻辑）---
+        updateBtButton()
+        btnBt.setOnClickListener {
+            keyBarController.resetAutoHideTimer()
+            val host = BluetoothController.hostDevice
+            if (host != null) {
+                // Connected → disconnect
+                BluetoothController.btHid?.disconnect(host)
+                BluetoothController.hostDevice = null
+                updateBtButton()
+                toast(getString(R.string.keybar_bt_disconnected))
+            } else {
+                // Disconnected → try connect to the previously paired device
+                BluetoothController.mpluggedDevice?.let { device ->
+                    if (BluetoothController.btHid?.getConnectionState(device) ==
+                        BluetoothProfile.STATE_DISCONNECTED
+                    ) {
+                        BluetoothController.btHid?.connect(device)
+                        toast(getString(R.string.keybar_bt_connecting))
+                    }
+                } ?: toast(getString(R.string.keybar_bt_no_device))
+            }
+        }
+        btnBt.setOnLongClickListener {
+            keyBarController.resetAutoHideTimer()
+            showDeviceSwitcher()
+            true
+        }
+
+        // --- 自动配对 🔗（KeysJoy setupToolbar 逻辑：autoPairFlag + 重连循环）---
+        btnAutoPair.text = if (prefs.autoPair) "🔗" else "⛓️💥"
+        btnAutoPair.setOnClickListener {
+            keyBarController.resetAutoHideTimer()
+            val enabled = !prefs.autoPair
+            prefs.autoPair = enabled
+            BluetoothController.autoPairFlag = enabled
+            btnAutoPair.text = if (enabled) "🔗" else "⛓️💥"
+            if (enabled) {
+                BluetoothController.startAutoReconnect()
+                // KeysJoy: 开启自动配对时立即尝试连接已配对设备
+                BluetoothController.mpluggedDevice?.let { device ->
+                    if (BluetoothController.btHid?.getConnectionState(device) ==
+                        BluetoothProfile.STATE_DISCONNECTED
+                    ) {
+                        BluetoothController.btHid?.connect(device)
+                    }
+                }
+                toast(getString(R.string.keybar_auto_pair_on))
+            } else {
+                BluetoothController.stopAutoReconnect()
+                toast(getString(R.string.keybar_auto_pair_off))
+            }
+        }
+
+        // --- 分辨率：1080p ↔ 4:3（switchMode 复用现有；失败回滚时 currentModeW/H 不变 → 文案不变）---
+        updateModeButton()
+        btnMode.setOnClickListener {
+            keyBarController.resetAutoHideTimer()
+            if (currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H) {
+                switchMode(MODE_1080P_W, MODE_1080P_H)
+            } else {
+                switchMode(MODE_4BY3_W, MODE_4BY3_H)
+            }
+            updateModeButton()
+        }
+
+        // --- 截图 📷（hdmi2mp captureJpg 原样复用）---
+        btnCapture.setOnClickListener {
+            keyBarController.resetAutoHideTimer()
+            captureJpg()
+        }
+
+        // --- 退出 ⏻：清理 + finish（onDestroy → AUSBC clear() 释放 UVC）---
+        btnExit.setOnClickListener {
+            keyBarController.destroy()
+            finish()
+        }
+    }
+
+    /** 蓝牙按钮文案：已连接显示设备名，未连接显示默认提示 */
+    private fun updateBtButton() {
+        val host = BluetoothController.hostDevice
+        btnBt.text = host?.name?.let { getString(R.string.keybar_bt_connected, it) }
+            ?: getString(R.string.keybar_bt_default)
+    }
+
+    /** 分辨率按钮文案：跟随 currentModeW/H（switchMode 失败回滚时不变） */
+    private fun updateModeButton() {
+        btnMode.text =
+            if (currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H) "4:3" else "1080p"
+    }
+
+    /**
+     * 多设备切换弹窗（复制 KeysJoy SelectDeviceActivity.showDeviceSwitcher，DESIGN §4.2 提取片段）。
+     * 长按蓝牙按钮唤出：列出已配对设备，点击 → switchTo() 切换；另有 "📡 Make Discoverable" 入口。
+     */
+    private fun showDeviceSwitcher() {
+        if (!::btnBt.isInitialized) return
+        val popup = PopupMenu(this, btnBt, Gravity.START)
+        val devices = BluetoothController.pairedDevices.toList()
+        val currentHost = BluetoothController.hostDevice
+
+        // Connected device header (disabled)
+        if (currentHost != null) {
+            popup.menu.add(
+                Menu.NONE, -1, 0, getString(R.string.keybar_popup_connected, currentHost.name)
+            ).isEnabled = false
+        } else {
+            popup.menu.add(Menu.NONE, -1, 0, getString(R.string.keybar_popup_no_device))
+                .isEnabled = false
+        }
+        popup.menu.add(Menu.NONE, -1, 1, "──────────────").isEnabled = false
+
+        // Make Discoverable menu item (KeysJoy verbatim: reflection setScanMode + system request)
+        popup.menu.add(Menu.NONE, -2, 2, getString(R.string.keybar_popup_make_discoverable))
+
+        // Paired devices list
+        var itemId = 0
+        for (device in devices) {
+            val label =
+                if (device.address == currentHost?.address) "▶ ${device.name}" else "  ${device.name}"
+            popup.menu.add(Menu.NONE, itemId, itemId + 3, label)
+            itemId++
+        }
+        if (devices.isEmpty()) {
+            popup.menu.add(Menu.NONE, -1, 3, getString(R.string.keybar_popup_no_paired))
+                .isEnabled = false
+        }
+
+        popup.setOnMenuItemClickListener { item ->
+            if (item.itemId == -2) {
+                // Make Discoverable
+                try {
+                    BluetoothAdapter.getDefaultAdapter()?.javaClass?.getMethod(
+                        "setScanMode",
+                        Int::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType
+                    )?.invoke(
+                        BluetoothAdapter.getDefaultAdapter(),
+                        BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE,
+                        300
+                    )
+                } catch (_: Exception) {
+                }
+                val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                startActivity(intent)
+                return@setOnMenuItemClickListener true
+            }
+            val idx = item.itemId
+            if (idx in 0 until devices.size) {
+                val target = devices[idx]
+                if (target.address != currentHost?.address) {
+                    BluetoothController.switchTo(target)
+                    toast(getString(R.string.keybar_bt_switching, target.name))
+                }
+            }
+            true
+        }
+        popup.show()
     }
 
     // ============ Touch-area alignment (uvcpad-touch-align: 触控区域 = 显示区域) ============

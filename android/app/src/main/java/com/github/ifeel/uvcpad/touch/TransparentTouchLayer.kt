@@ -34,6 +34,12 @@ class TransparentTouchLayer @JvmOverloads constructor(
     /** 手势引擎；null = 未连接/已断开，触摸不产生任何报告 */
     private var gestureListener: ViewListener? = null
 
+    /**
+     * 任意触摸回调（M2，DESIGN §3.4 "任意触摸（三角/按键栏/触控层）都重置计时"）：
+     * 本层收到任何触摸事件时回调，MainActivity 用它重置按键栏自动隐藏计时。
+     */
+    var onAnyTouch: (() -> Unit)? = null
+
     /** 蓝牙连接成功后挂载手势引擎；断开时传入 null 卸载（DESIGN §3.7：先卸监听再置空 sender） */
     fun setGestureListener(listener: ViewListener?) {
         gestureListener = listener
@@ -73,6 +79,7 @@ class TransparentTouchLayer @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        onAnyTouch?.invoke()
         val listener = gestureListener ?: return false
         return listener.onTouch(this, event)
     }
