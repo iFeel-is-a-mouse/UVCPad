@@ -62,6 +62,8 @@ class TransparentTouchLayer @JvmOverloads constructor(
         lp.topMargin = rect.top
         lp.width = width
         lp.height = height
+        // [uvcpad-touch-align-fix] layoutParams 写入会触发一次布局 → OnGlobalLayoutListener 再次回调
+        // syncTouchLayerBounds；此时值已相同会在上方直接返回，形成最多 2 次触发的无害循环（无死循环风险）。
         layoutParams = lp
     }
 

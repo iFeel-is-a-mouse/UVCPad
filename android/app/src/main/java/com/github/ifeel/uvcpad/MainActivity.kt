@@ -16,6 +16,7 @@ import android.os.Environment
 import android.text.method.ScrollingMovementMethod
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -519,7 +520,13 @@ class MainActivity : CameraActivity() {
      *   显示区域后 MOVE 仍持续派发给本层 → 拖拽不丢失（ViewListener 链路原样工作）。
      */
     private fun syncTouchLayerBounds() {
+        // [uvcpad-touch-align-fix] 类型防御：AUSBC initView 用 removeAllViews + 单个 addView 保证
+        // 容器只有相机视图一个子 View；相机视图由 getCameraView() 程序化创建
+        // （AspectRatioTextureView，extends TextureView，无 resource id，无法 findViewById），
+        // 故校验子 View 类型而非隐式信任 getChildAt(0)。类型不符（未来容器混入其他子 View）时
+        // 按"无相机视图"保守处理（触控层 0×0）。
         val cameraView = cameraViewContainer.getChildAt(0)
+            ?.takeIf { it is TextureView }
         if (cameraView == null || cameraView.width <= 0 || cameraView.height <= 0) {
             touchLayer.alignToDisplayRect(Rect(0, 0, 0, 0))
             return

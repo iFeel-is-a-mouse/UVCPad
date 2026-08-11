@@ -265,7 +265,10 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
 - `alignToDisplayRect` 是 `TransparentTouchLayer` 的公开方法（本需求唯一新增 API）。
 
 **同步触发点（显示区域变化的全部路径）：**
-1. **首次布局**：监听在首帧绘制前已注册 → 第一次布局后即对齐；
+1. **首次对齐（相机打开后）**：`bindViews()` 在 `super.onCreate()`（含 setContentView → 首布局完成）之后才注册
+   `OnGlobalLayoutListener`，因此监听注册后，首次对齐实际在**相机打开 → `setAspectRatio` → `requestLayout`** 的
+   布局回调中完成；启动到相机打开之间的窗口期触控层保持 XML 全屏 match_parent（该窗口期通常无画面无交互，
+   风险可忽略）；
 2. **分辨率切换** `switchMode → updateResolution`：预览重启 → `setAspectRatio(新比例)` → `requestLayout`
    → 相机视图重新测量 → 布局监听触发；
 3. **旋转/配置变更**：Activity 重建 → `bindViews` 重新注册监听 → 首布局即对齐；
