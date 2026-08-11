@@ -164,7 +164,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         throwable.printStackTrace(PrintWriter(sw))
         val ctx = appContext
         return buildString {
-            append("==== hdmi2mp crash log ====\n")
+            append("==== uvcpad crash log ====\n")
             append("time: ")
             append(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
             append('\n')
@@ -256,9 +256,9 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         try {
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "hdmi2mp_crash_$stamp.txt")
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "uvcpad_crash_$stamp.txt")
                 put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/hdmi2mp")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/uvcpad")
             }
             val resolver = ctx.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
@@ -329,7 +329,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         val fileInfo = TextView(activity).apply {
             val loc = if (crashFile != null) crashFile.absolutePath else "write failed"
             val extra = if (Build.VERSION.SDK_INT >= 29) {
-                "\nAlso saved to system Downloads: Download/hdmi2mp/ (no adb needed; retrieve via the system Files app)"
+                "\nAlso saved to system Downloads: Download/uvcpad/ (no adb needed; retrieve via the system Files app)"
             } else {
                 ""
             }

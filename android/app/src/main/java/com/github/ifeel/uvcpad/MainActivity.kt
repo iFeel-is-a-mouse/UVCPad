@@ -219,17 +219,17 @@ class MainActivity : CameraActivity() {
         super.onResume()
         CrashHandler.setActiveActivity(this)
         // DESIGN §3.7 (KeysJoy pattern): force full re-init when returning from background —
-        // btHid may be stale after app switch
+        // btHid may be stale after app switch. M1 fix: merged into a single guarded path so
+        // init() (async getProfileProxy) is requested at most once per onResume.
         if (wasInBackground) {
             wasInBackground = false
             BluetoothController.btHid = null
             BluetoothController.hostDevice = null
-            BluetoothController.init(this)
-        } else if (BluetoothController.btHid == null) {
-            BluetoothController.init(this)
         }
-        // Back from background: re-init if no active connection
-        if (BluetoothController.hostDevice == null && BluetoothController.btHid != null) {
+        if (BluetoothController.btHid == null) {
+            BluetoothController.init(this)
+        } else if (BluetoothController.hostDevice == null) {
+            // btHid alive but no active connection: reset and re-init
             BluetoothController.btHid = null
             BluetoothController.hostDevice = null
             BluetoothController.init(this)
