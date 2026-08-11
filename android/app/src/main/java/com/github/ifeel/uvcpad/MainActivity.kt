@@ -104,6 +104,11 @@ class MainActivity : CameraActivity() {
     // (≤30) → WRITE_EXTERNAL_STORAGE (23–28). Each launcher continues the chain in its result
     // callback so the system permission dialogs never stack (hdmi2mp L2 pattern extended).
 
+    // Set when the serial chain actually launches a permission dialog. The chain tail uses it
+    // to run the first-launch BT init that onStart had to skip while dialogs were still up
+    // (P2 fix, uvcpad-P2-fix); stays false when every permission was already granted.
+    private var permissionDialogShown = false
+
     // API 23~28 need the storage permission to import screenshots into the system gallery (29+ uses MediaStore, no permission needed)
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -113,6 +118,9 @@ class MainActivity : CameraActivity() {
             toast(msg)
             showError(msg)
         }
+        // Chain tail on API 23–28: last dialog is done — run the first-launch BT init that
+        // onStart skipped (P2 fix; no-op unless the chain actually showed dialogs)
+        maybeInitBluetoothAfterFirstLaunch()
     }
 
     // API≤30 needs location for Bluetooth discovery (S+ exempted: BLUETOOTH_SCAN declares neverForLocation)
@@ -195,9 +203,16 @@ class MainActivity : CameraActivity() {
 
     override fun onStart() {
         super.onStart()
-        // KeysJoy onStart pattern: init the HID profile and register the connect/disconnect
-        // wiring. Guarded by permissions + adapter state (the serial permission flow may still
-        // be showing dialogs; onResume re-init covers the late path).
+        initBluetooth()
+    }
+
+    /**
+     * KeysJoy onStart init path: init the HID profile and register the connect/disconnect
+     * wiring. Guarded by permissions + adapter state (the serial permission flow may still
+     * be showing dialogs; onResume re-init covers the late path). Shared by the permission
+     * chain tail (P2 fix) so the first-launch grant re-runs exactly the same init.
+     */
+    private fun initBluetooth() {
         if (!checkBluetoothPermissions()) return
         if (BluetoothAdapter.getDefaultAdapter()?.isEnabled != true) {
             toast(getString(R.string.bt_disabled_hint))
@@ -473,6 +488,7 @@ class MainActivity : CameraActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            permissionDialogShown = true
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         } else {
             requestBtPermissionsIfNeeded()
@@ -489,6 +505,7 @@ class MainActivity : CameraActivity() {
                 this, Manifest.permission.BLUETOOTH_SCAN
             ) != PackageManager.PERMISSION_GRANTED
             if (needConnect || needScan) {
+                permissionDialogShown = true
                 btPermissionsLauncher.launch(
                     arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
                 )
@@ -505,6 +522,7 @@ class MainActivity : CameraActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED
             ) {
+                permissionDialogShown = true
                 locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
                 return
             }
@@ -518,7 +536,25 @@ class MainActivity : CameraActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            permissionDialogShown = true
             storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            // Chain tail on S+ / API 29–30: last dialog (if any) is done — run the first-launch
+            // BT init that onStart skipped while dialogs were showing (P2 fix, uvcpad-P2-fix)
+            maybeInitBluetoothAfterFirstLaunch()
+        }
+    }
+
+    /**
+     * First-launch chain tail (P2 fix, uvcpad-P2-fix): when the serial flow actually showed
+     * permission dialogs, onStart returned early without BT init (permissions not yet granted).
+     * Now that every required permission is granted, run the same guarded init (DESIGN §3.7).
+     * No-op on later launches: the flag stays false because every permission was already
+     * granted and onStart already ran the init.
+     */
+    private fun maybeInitBluetoothAfterFirstLaunch() {
+        if (permissionDialogShown) {
+            initBluetooth()
         }
     }
 
