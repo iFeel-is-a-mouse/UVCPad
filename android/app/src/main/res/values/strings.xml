@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">uvcpad</string>
+    <!-- 显示链路（hdmi2mp 原样保留） -->
+    <string name="btn_capture">Screenshot</string>
+    <string name="status_waiting">Waiting for USB capture card…</string>
+    <string name="status_opened">Connected: %1$s</string>
+    <string name="status_error">Error: %1$s</string>
+    <string name="capture_saved">Screenshot saved: %1$s</string>
+    <string name="capture_failed">Screenshot failed: %1$s</string>
+    <string name="storage_permission_denied">Storage permission not granted. The screenshot was saved to the app\'s private directory but could not be imported into the system gallery</string>
+    <string name="camera_permission_denied">Camera permission not granted. The UVC capture card may fail to open. Please grant the permission in system settings and restart the app</string>
+    <string name="usb_permission_hint">Tap "Allow / Always allow" in the USB permission dialog, otherwise the capture card cannot be opened</string>
+    <!-- 触控链路（蓝牙） -->
+    <string name="bt_permission_denied">Bluetooth permission not granted. The pad cannot register as a HID device. Please grant it in system settings</string>
+    <string name="location_permission_denied">Location permission not granted. Discovery on this Android version needs it; already-paired devices still work</string>
+    <string name="bt_disabled_hint">Bluetooth is disabled. Please enable it to use the pad as a HID touchpad</string>
+</resources>

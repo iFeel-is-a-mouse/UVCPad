@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UVC device filter: keeps only standard UVC device classes to avoid matching non-UVC devices
+     such as CDC/Image/Type-C Bridge.
+     class 239(0xEF)/subclass 2 = Video subclass of the Miscellaneous class (IAD, covers MS2130 and other UVC capture cards)
+     class 14(0x0E)/subclass 1 = VideoControl interface of the Video class
+     class 14(0x0E)/subclass 2 = VideoStreaming interface of the Video class -->
+<usb>
+    <usb-device class="239" subclass="2" />
+    <usb-device class="14" subclass="1" />
+    <usb-device class="14" subclass="2" />
+</usb>

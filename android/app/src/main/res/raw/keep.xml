@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  keep.xml — prevents the resource shrinker (shrinkResources) from removing unreferenced license files.
+
+  Background: release builds enable minifyEnabled + shrinkResources, and the three license files
+  are not referenced by code (they are packaged only for distribution/compliance), so they would
+  be stripped by default as unused resources. They are kept explicitly via tools:keep to ensure
+  the final APK contains the full license texts.
+
+  Note: raw resource names do not include the file extension (R.raw.libjpeg_turbo_license, etc.),
+  so tools:keep must reference @raw/xxx rather than @raw/xxx.txt, otherwise the reference fails to resolve.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/libusb_license,@raw/libuvc_license,@raw/libjpeg_turbo_license" />

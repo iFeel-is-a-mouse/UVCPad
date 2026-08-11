@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- uvcpad M1 layout (DESIGN §3.1, M1 subset):
+     Z 序（下→上）：cameraViewContainer（UVC 画面）→ touchLayer（全屏透明触控层）→ errorText（错误提示，仅出错时可见）。
+     M2 将在此之上追加 topUiContainer（下拉三角 + 按键栏）。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black">
+
+    <!-- UVC camera render container (full screen; CameraActivity adds the render view automatically) -->
+    <FrameLayout
+        android:id="@+id/cameraViewContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 全屏透明触控层：不绘制任何内容，仅接收触摸事件并转发给 ViewListener（蓝牙连接后挂载手势）。
+         位于 cameraViewContainer 之上 → 触摸优先派发到本层；蓝牙断开时卸载手势（DESIGN §3.2） -->
+    <com.github.ifeel.uvcpad.touch.TransparentTouchLayer
+        android:id="@+id/touchLayer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Error/notification area (diagnostics): initially hidden; shown by showError() on errors.
+         Kept from hdmi2mp verbatim (errorText 独立于工具栏，不随自动隐藏计时消失，便于用户阅读/拍摄) -->
+    <TextView
+        android:id="@+id/errorText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginTop="60dp"
+        android:background="@color/error_bg"
+        android:maxHeight="180dp"
+        android:padding="12dp"
+        android:scrollbars="vertical"
+        android:scrollbarStyle="insideOverlay"
+        android:textColor="@color/error_red"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
+</FrameLayout>

@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.github.ifeel.uvcpad'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.github.ifeel.uvcpad"
+        minSdk 28
+        targetSdk 36
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Release is signed with the debug key temporarily (no production keystore)
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    splits {
+        abi {
+            // Release builds: arm64-only slim variant (with R8 shrinking, outputs app-arm64-v8a-release.apk);
+            // Debug builds: full universal APK (outputs app-debug.apk, all ABIs)
+            def buildRelease = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+            enable buildRelease
+            reset()
+            include "arm64-v8a"
+            universalApk false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.18.0'
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'com.google.android.material:material:1.13.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    // AUSBC 3.6.0 (ernestp/AndroidUSBCamera, Apache 2.0) — via JitPack
+    implementation 'com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0'
+}
