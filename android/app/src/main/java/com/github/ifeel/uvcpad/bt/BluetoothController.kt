@@ -181,6 +181,14 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 return
             }
             this.btHid = btHid
+            // Set the discoverable name to "uvcpad" so PCs see it instead of the
+            // device model name (e.g. "MatePad Paper"). Must be re-applied on every
+            // service connect because the system may reset the name after reboot.
+            try {
+                btAdapter.setName("uvcpad")
+            } catch (e: Throwable) {
+                Log.e(TAG, "setName failed", e)
+            }
             val registered = btHid.registerApp(sdpRecord, null, qosOut, {it.run()}, this)//--
             Log.i(TAG, "registerApp result: $registered")
             if (registered) {
