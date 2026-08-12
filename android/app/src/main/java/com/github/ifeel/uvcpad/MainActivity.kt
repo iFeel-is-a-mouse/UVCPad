@@ -718,13 +718,13 @@ class MainActivity : CameraActivity() {
         }
 
         // --- 自动配对 🔗（KeysJoy setupToolbar 逻辑：autoPairFlag + 重连循环）---
-        btnAutoPair.text = if (prefs.autoPair) "🔗" else "⛓️💥"
+        btnAutoPair.text = if (prefs.autoPair) "🔗" else "⛓️‍💥"
         btnAutoPair.setOnClickListener {
             keyBarController.resetAutoHideTimer()
             val enabled = !prefs.autoPair
             prefs.autoPair = enabled
             BluetoothController.autoPairFlag = enabled
-            btnAutoPair.text = if (enabled) "🔗" else "⛓️💥"
+            btnAutoPair.text = if (enabled) "🔗" else "⛓️‍💥"
             if (enabled) {
                 BluetoothController.startAutoReconnect()
                 // KeysJoy: 开启自动配对时立即尝试连接已配对设备

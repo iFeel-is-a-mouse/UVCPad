@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- [uvcpad-keybar-style] 按键栏按钮统一样式（根治按钮高度不齐）：
-         固定 40dp 高度 + 内容居中；垂直 padding 由固定高度接管，仅保留水平内边距。
-         字号不进 style —— 速度/截图/退出 16sp、蓝牙/分辨率 13sp 保持各自差异。
+    <!-- [uvcpad-keybar-font] 按键栏按钮统一样式：高度交由 wrap_content + 统一字号行高决定
+         （字号一致 → 行高一致 → 按钮自然等高），不再固定 40dp。
+         字号不进 style —— 6 个按钮在 layout 中统一 14sp。
          singleLine：蓝牙设备名过长时单行省略（配合按钮自身的 ellipsize="end"）。 -->
     <style name="KeyBarButton">
-        <item name="android:layout_height">40dp</item>
+        <item name="android:layout_height">wrap_content</item>
         <item name="android:gravity">center</item>
         <item name="android:background">@drawable/bg_btn</item>
         <item name="android:clickable">true</item>

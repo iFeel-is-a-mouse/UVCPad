@@ -63,7 +63,7 @@
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
                 android:text="4️⃣"
-                android:textSize="16sp" />
+                android:textSize="14sp" />
 
             <!-- 蓝牙：显示设备名/状态；点击连接/断开；长按 → 多设备切换（showDeviceSwitcher） -->
             <TextView
@@ -75,7 +75,7 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="📡"
-                android:textSize="13sp" />
+                android:textSize="14sp" />
 
             <!-- 自动配对 🔗：切换 autoPairFlag + startAutoReconnect/stopAutoReconnect -->
             <TextView
@@ -85,7 +85,7 @@
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
                 android:text="🔗"
-                android:textSize="16sp" />
+                android:textSize="14sp" />
 
             <!-- 分辨率：16:9 ↔ 4:3（switchMode 复用现有，按钮文案随 currentMode 更新） -->
             <TextView
@@ -95,7 +95,7 @@
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
                 android:text="16:9"
-                android:textSize="13sp" />
+                android:textSize="14sp" />
 
             <!-- 截图 📷：captureJpg()（含 MediaStore 导入） -->
             <TextView
@@ -105,7 +105,7 @@
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
                 android:text="📷"
-                android:textSize="16sp" />
+                android:textSize="14sp" />
 
             <!-- 弹性空隙：把退出按钮推到最右（hdmi2mp 惯例），同时让三角（顶部居中）
                  落在按键栏的空隙上方，展开时三角仍可点击收起 -->
@@ -122,7 +122,7 @@
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
                 android:text="⏻"
-                android:textSize="16sp" />
+                android:textSize="14sp" />
         </com.github.ifeel.uvcpad.ui.KeyBarPanel>
 
         <!-- 下拉三角：唯一常驻 UI，顶部居中，热区 48dp×48dp；事件豁免区（DESIGN §3.3）
