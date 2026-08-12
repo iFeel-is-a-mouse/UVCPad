@@ -836,8 +836,13 @@ class MainActivity : CameraActivity() {
         if (!::btnBt.isInitialized) return
         val popup = PopupMenu(this, btnBt, Gravity.START)
         // [uvcpad-fix-p3] pairedDevices 为空时用系统已配对列表兜底填充
+        // [uvcpad-fix-p2] S+ getBondedDevices 需要 BLUETOOTH_CONNECT：异常时降级为空列表
         val devices = BluetoothController.pairedDevices.toList().ifEmpty {
-            BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList() ?: emptyList()
+            try {
+                BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList() ?: emptyList()
+            } catch (e: SecurityException) {
+                emptyList()
+            }
         }
         val currentHost = BluetoothController.hostDevice
 
@@ -884,9 +889,14 @@ class MainActivity : CameraActivity() {
                     )
                 } catch (_: Exception) {
                 }
-                val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
-                intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
-                startActivity(intent)
+                try {
+                    // [uvcpad-fix-p2] S+ ACTION_REQUEST_DISCOVERABLE 需要 BLUETOOTH_CONNECT：无权限时降级提示
+                    val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                    intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                    startActivity(intent)
+                } catch (e: SecurityException) {
+                    toast(getString(R.string.bt_permission_denied))
+                }
                 return@setOnMenuItemClickListener true
             }
             val idx = item.itemId
@@ -898,7 +908,7 @@ class MainActivity : CameraActivity() {
                     prefs.lastDeviceAddress = target.address
                     BluetoothController.lastDeviceAddress = target.address
                     BluetoothController.switchTo(target)
-                    toast(getString(R.string.keybar_bt_switching, target.name))
+                    toast(getString(R.string.keybar_bt_switching, btDeviceName(target)))
                 }
             }
             true
