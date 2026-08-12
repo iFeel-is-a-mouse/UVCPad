@@ -2,11 +2,12 @@ package com.github.ifeel.uvcpad.bt.senders
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import com.github.ifeel.uvcpad.bt.BluetoothController
 import com.github.ifeel.uvcpad.bt.reports.ScrollableTrackpadMouseReport
 import java.nio.ByteBuffer
-import java.util.*
-import kotlin.concurrent.schedule
 
 @Suppress("MemberVisibilityCanBePrivate")
 open class RelativeMouseSender(
@@ -15,12 +16,20 @@ open class RelativeMouseSender(
 
 ) {
     val mouseReport = ScrollableTrackpadMouseReport()
-    var previousvscroll :Int=0
-    var previoushscroll :Int =0
+
+    /** [uvcpad-fix-p3] 复用单 Handler 代替每次 new Timer().schedule()（sendRightClick 释放按键） */
+    private val clickHandler = Handler(Looper.getMainLooper())
 
     protected open fun sendMouse() {
-        if (!hidDevice.sendReport(host, ScrollableTrackpadMouseReport.ID, mouseReport.bytes)) {
-            Log.e(TAG, "Report wasn't sent")
+        // [uvcpad-fix-p2] S+ BLUETOOTH_CONNECT 被撤销时静默丢弃，避免 sendReport SecurityException 崩溃
+        if (!BluetoothController.hasConnectPermission()) return
+        try {
+            if (!hidDevice.sendReport(host, ScrollableTrackpadMouseReport.ID, mouseReport.bytes)) {
+                Log.e(TAG, "Report wasn't sent")
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "sendReport blocked: no BLUETOOTH_CONNECT", e)
+            return
         }
         // Zero movement/scroll fields after send; preserve button state for drag support
         mouseReport.dxLsb = 0
@@ -31,45 +40,12 @@ open class RelativeMouseSender(
         mouseReport.hScroll = 0
     }
 
-    fun sendTestMouseMove() {
-        mouseReport.dxLsb = 20
-        mouseReport.dyLsb = 20
-        mouseReport.dxMsb = 20
-        mouseReport.dyMsb = 20
-        sendMouse()
-    }
-
     fun sendTestClick() {
         mouseReport.leftButton = true
         sendMouse()
         mouseReport.leftButton = false
         sendMouse()
-//        Timer().schedule(20L) {
-//
-//        }
     }
-    fun sendDoubleTapClick() {
-        mouseReport.leftButton = true
-        sendMouse()
-        Timer().schedule(100L) {
-            mouseReport.leftButton = false
-            sendMouse()
-            Timer().schedule(100L) {
-                mouseReport.leftButton = true
-                sendMouse()
-                Timer().schedule(100L) {
-                    mouseReport.leftButton = false
-                    sendMouse()
-                }
-
-
-
-
-            }
-        }
-    }
-
-
 
     fun sendLeftClickOn() {
         mouseReport.reset()
@@ -86,28 +62,13 @@ open class RelativeMouseSender(
         mouseReport.leftButton = false
         sendMouse()
     }
-    fun sendRightClickOn() {
-        mouseReport.reset()
-        mouseReport.rightButton = true
-        sendMouse()
-    }
-
-    fun sendRightClickOff() {
-        mouseReport.dxLsb = 0
-        mouseReport.dxMsb = 0
-        mouseReport.dyLsb = 0
-        mouseReport.dyMsb = 0
-        mouseReport.vScroll = 0
-        mouseReport.hScroll = 0
-        mouseReport.rightButton = false
-        sendMouse()
-    }
 
     fun sendRightClick() {
         mouseReport.reset()
         mouseReport.rightButton = true
         sendMouse()
-        Timer().schedule(50L) {
+        // [uvcpad-fix-p3] 复用 clickHandler 替代每次新建 Timer 线程（每击省一个线程）
+        clickHandler.postDelayed({
             mouseReport.dxLsb = 0
             mouseReport.dxMsb = 0
             mouseReport.dyLsb = 0
@@ -116,7 +77,7 @@ open class RelativeMouseSender(
             mouseReport.hScroll = 0
             mouseReport.rightButton = false
             sendMouse()
-        }
+        }, 50L)
     }
 
     /** Move with left button held for drag operations. */
@@ -152,49 +113,12 @@ open class RelativeMouseSender(
         sendMouse()
     }
 
-    fun sendScroll(vscroll:Int,hscroll:Int){
-
-        var hscrollmutable=0
-        var vscrollmutable =0
-
-        hscrollmutable=hscroll
-        vscrollmutable= vscroll
-
-//        var dhscroll= hscrollmutable-previoushscroll
-//        var dvscroll= vscrollmutable-previousvscroll
-//
-//        dhscroll = Math.abs(dhscroll)
-//        dvscroll = Math.abs(dvscroll)
-//        if(dvscroll>=dhscroll)
-//        {
-//            hscrollmutable=0
-//
-//        }
-//        else
-//        {
-//            vscrollmutable=0
-//        }
-        var vs:Int =(vscrollmutable)
-        var hs:Int =(hscrollmutable)
-        Log.i("vscroll ",vscroll.toString())
-        Log.i("vs ",vs.toString())
-        Log.i("hscroll ",hscroll.toString())
-        Log.i("hs ",hs.toString())
-
-
-        mouseReport.vScroll=vs.toByte()
-        mouseReport.hScroll= hs.toByte()
-
+    fun sendScroll(vscroll: Int, hscroll: Int) {
+        // [uvcpad-fix-p3] 每帧 4 条 Log.i 已删除（高频噪声）；无死代码/注释块
+        mouseReport.vScroll = vscroll.toByte()
+        mouseReport.hScroll = hscroll.toByte()
         sendMouse()
-
-//        previousvscroll=-1*vscroll
-//        previoushscroll=hscroll
-
-
     }
-
-
-
 
     companion object {
         const val TAG = "TrackPadSender"

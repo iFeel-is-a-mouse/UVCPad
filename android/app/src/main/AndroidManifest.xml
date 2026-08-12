@@ -17,6 +17,15 @@
 
     <!-- Camera runtime permission: merged declaration from the AUSBC library; required to open the MS2130 UVC; requested proactively at app startup -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- [uvcpad-fix-p3] CAMERA 权限隐含摄像头硬件要求，但本应用用的是 UVC 采集卡（非本机摄像头）：
+         声明摄像头非必需，避免 PermissionImpliesUnsupportedChromeOsHardware lint 与 Play 硬件过滤 -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <!-- [uvcpad-fix-p2] AUSBC 库合并带入 RECORD_AUDIO（本应用 AudioSource.NONE 不需要）：显式剔除 -->
+    <uses-permission
+        android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove" />
 
     <!-- ============ 触控链路：蓝牙 HID（KeysJoy 原样） ============ -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -43,7 +52,7 @@
 
     <application
         android:name=".UvcpadApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:largeHeap="true"

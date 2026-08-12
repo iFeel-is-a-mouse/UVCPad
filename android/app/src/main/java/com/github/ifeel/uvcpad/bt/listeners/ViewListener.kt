@@ -270,7 +270,7 @@ class ViewListener(
                         (event.getY(0) - event.getY(1)).toDouble()
                     ).toFloat()
                     if (fingerDistance > 30f) {
-                        Log.i("ViewListener", "Two-finger right click (POINTER_UP)")
+                        Log.d("ViewListener", "Two-finger right click (POINTER_UP)")
                         rMouseSender.sendRightClick()
                         rightClickSent = true
                     }
@@ -360,8 +360,13 @@ class ViewListener(
                 wakeRunnables.clear()
                 for (i in 0 until 4) {
                     val runnable = Runnable {
-                        rMouseSender.mouseReport.reset()
-                        hidDevice.sendReport(host, 4, rMouseSender.mouseReport.bytes)
+                        // [uvcpad-fix-p2] S+ 权限被撤销时 sendReport 抛 SecurityException：静默丢弃唤醒串
+                        try {
+                            rMouseSender.mouseReport.reset()
+                            hidDevice.sendReport(host, 4, rMouseSender.mouseReport.bytes)
+                        } catch (e: SecurityException) {
+                            // BLUETOOTH_CONNECT revoked mid-session: drop the wake burst
+                        }
                     }
                     wakeRunnables.add(runnable)
                     wakeHandler.postDelayed(runnable, i * 5L)
@@ -449,7 +454,7 @@ class ViewListener(
             // Use activePointerCount (tracked in onTouch) — more reliable than
             // e.pointerCount which may report stale values from the event.
             if (activePointerCount >= 2) {
-                Log.i("ViewListener", "Two-finger tap → right click")
+                Log.d("ViewListener", "Two-finger tap → right click")
                 rMouseSender.sendRightClick()
                 return true
             }
@@ -534,7 +539,7 @@ class ViewListener(
             if (scrollDelta != 0) {
                 rMouseSender.sendScroll(scrollDelta, 0)
             }
-            Log.d("ViewListener", "Scale: factor=$factor scrollDelta=$scrollDelta")
+            // [uvcpad-fix-p3] 每帧 Log.d("Scale...") 已删除（捏合期间高频噪声）
             return true
         }
 
