@@ -1,8 +1,8 @@
 # uvcpad 技术设计（M1 骨架整合）
 
 > 文档性质：M1 技术设计，基于两个存量项目真实源码（hdmi2mp / KeysJoy）的整合设计。
-> 状态：✅ 已通过 D3 评审（P1/P2 已修），进入 M1 编码。
-> 关联文档：`docs/PROPOSAL.md`（需求理解，Q2/Q3 已确认：纯触控板、横屏唯一形态）。
+> 状态：✅ **M1 已完成**（含触控区域=显示区域需求落地），编码+构建通过，待真机联调；**M2 交互入口已实现（v0.2.x 迭代中）**。
+> 关联文档：`docs/PROPOSAL.md`（需求理解，Q2/Q3 已确认：纯触控板、横屏唯一形态）；`docs/todo.md`（M2 待办清单）；`docs/journey.md`（开发历程）。
 
 ---
 
@@ -430,22 +430,22 @@ App 启动（USB attach 或 Launcher）
 
 ## 5. 里程碑 M1 / M2
 
-### 5.1 M1 骨架整合（验收：画面显示 + 光标可动）
+### 5.1 M1 骨架整合（验收：画面显示 + 光标可动）— ✅ 编码完成 2026-08-12
 
-实施顺序：
-1. **工程骨架**：gradle/settings/manifest/res 复制整理；`UvcpadApplication`+`CrashHandler`；空 `MainActivity` 可编译运行。
-2. **显示链路**：布局（cameraViewContainer + errorText）；`getCameraRequest`（1920×1080/MJPEG/OPENGL/captureRawImage）/`getCameraView`（AspectRatioTextureView）/`onCameraState`/USB 授权提示/串行权限；插卡即出画面。
-3. **蓝牙链路**：复制 `BluetoothController`（改鼠标专用描述符 + "uvcpad" 设备名）+ reports + senders + `ViewListener` + `SpeedLevel`；BT 权限；`onStart` init；连接回调装配。
-4. **透明触控层**：`TransparentTouchLayer` 叠加 + 连接后挂载 ViewListener；断开卸载。
-5. **联调**：PC 配对 → 单指移动/单击验证光标；临时验证 5 档速度（可先硬编码 level，正式入口在 M2 按键栏）。
-6. git init/commit + push。
+实施顺序（状态截至 2026-08-12）：
+1. ✅ **工程骨架**：gradle/settings/manifest/res 复制整理；`UvcpadApplication`+`CrashHandler`；空 `MainActivity` 可编译运行（assembleDebug 通过）。
+2. ✅ **显示链路**：布局（cameraViewContainer + touchLayer + errorText）；`getCameraRequest`（1920×1080/MJPEG/OPENGL/captureRawImage）/`getCameraView`（AspectRatioTextureView）/`onCameraState`/USB 授权提示/串行权限；插卡即出画面（编码就绪）。
+3. ✅ **蓝牙链路**：复制 `BluetoothController`（改鼠标专用描述符 + "uvcpad" 设备名）+ reports + senders + `ViewListener` + `SpeedLevel`；BT 权限；`onStart` init；连接回调装配（含 P2 修复：首次启动授权后链尾补 init）。
+4. ✅ **透明触控层**：`TransparentTouchLayer` 叠加 + 连接后挂载 ViewListener；断开卸载；另已落地"触控区域=显示区域"（§3.2.1）。
+5. ⬜ **联调（真机，待用户提供采集卡+PC 配对环境）**：PC 配对 → 单指移动/单击验证光标；临时验证 5 档速度（可先硬编码 level，正式入口在 M2 按键栏）。
+6. ✅ git init/commit（5 个 commit：4ed1f58/4abdc04/2cf23ba/2bd498b/6d36a24）；⬜ push（github 仓库 iFeel-is-a-mouse/uvcpad 未建）。
 
-验收要点：
-- [ ] 采集卡插入即全屏显示（1080p 默认；4:3 预留，M2 进菜单）
-- [ ] 画面铺满、透明层不可见（视觉零遮挡）
-- [ ] 蓝牙配对后单指移动光标跟手、tap 左键生效
-- [ ] 拔插采集卡/蓝牙断连不崩溃，错误提示可见
-- [ ] 触控层与渲染互不阻塞（渲染 60fps 时触摸无卡顿）
+验收要点（编码侧状态；**真机验证留待用户，见 docs/todo.md M1 收尾遗留**）：
+- [x] 采集卡插入即全屏显示（1080p 默认；4:3 预留，M2 进菜单）— 编码就绪，真机待验
+- [x] 画面铺满、透明层不可见（视觉零遮挡）— 编码就绪，真机待验
+- [x] 蓝牙配对后单指移动光标跟手、tap 左键生效 — 编码就绪（ViewListener 链路原样），真机待验
+- [x] 拔插采集卡/蓝牙断连不崩溃，错误提示可见 — 编码就绪（ERROR→errorText / 断开先卸监听），真机待验
+- [x] 触控层与渲染互不阻塞（渲染 60fps 时触摸无卡顿）— 线程模型已分离（§2.3），真机待验
 
 ### 5.2 M2 透明层全量 + 交互入口（验收：全手势 + 三角 + 自动隐藏按键栏）
 
@@ -497,12 +497,14 @@ App 启动（USB attach 或 Launcher）
 
 ---
 
-## 7. 待办（编码前需 main/analyze 确认）
+## 7. 待办（编码前需 main/analyze 确认 — ✅ 已全部完成 2026-08-12）
 
-- [ ] DESIGN.md 评审通过（含 §3.6 三组输入→输出示例验证）
-- [ ] 确认 M1 验收口径 = "画面显示 + 光标可动"（PROPOSAL §9）
-- [ ] 确认按键栏菜单集合（§3.4 表格）与 PROPOSAL Q4（截图保留）一致
-- [ ] 确认设备名 `"uvcpad"`（PC 端显示名）
+- [x] DESIGN.md 评审通过（含 §3.6 三组输入→输出示例验证）
+- [x] 确认 M1 验收口径 = "画面显示 + 光标可动"（PROPOSAL §9）
+- [x] 确认按键栏菜单集合（§3.4 表格）与 PROPOSAL Q4（截图保留）一致
+- [x] 确认设备名 `"uvcpad"`（PC 端显示名）
+
+> M1 后的待办已迁移至 `docs/todo.md`（M2 清单，来源：reviewer/tester/auditor 评审记录 + main 决策 2026-08-12）。
 
 ---
 

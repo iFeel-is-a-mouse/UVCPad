@@ -95,3 +95,10 @@
   - **分辨率（resolutionW/H）**：✅ 完整。写入 OPENED 回读 `saveResolution`（switchMode 预写 + OPENED 回读覆盖，回退尺寸如实记忆）；onCreate 恢复 `currentModeW/H = prefs.resolutionW/H`；生效 getCameraRequest 按记忆值请求。
 - **结论**：三项链路均闭环，无需代码改动（速度/自动配对恢复链路自 4ed1f58 即存在，分辨率 v0.2.4 落地，mem2 d202375 又补充"未插卡也可设置记忆"）。
 - **构建**：`./gradlew :app:assembleRelease` BUILD SUCCESSFUL——`app/build/outputs/apk/release/app-arm64-v8a-release.apk`（sha256 bacfcb3d…095297，4,365,339 B）。
+
+## 收尾三件套（2026-08-12，[uvcpad-toast-singleton] / [uvcpad-last-device-click] / [uvcpad-docs-sync]）
+
+- **git 梳理**：B 任务（last-device）完整改动（UvcpadPrefs 字段 + BluetoothController resolveAutoConnectTarget/两入口 + MainActivity 接线）此前散落在工作树未提交，已核对完整性并入库（37ae486 [uvcpad-last-device]，功能同原 f3526c3 且补齐 MainActivity 接线）。
+- **Toast 单例化（298f150）**：用户反馈提示堆积、新消息冲不掉旧的 → `toast()` 改全局单例 `sToast`，先 `cancel()` 旧 toast 再显示新消息；全项目仅 MainActivity 调 Toast，无其他散落点。
+- **最近设备点击即记忆（6e8c7e8）**：用户澄清口径——showDeviceSwitcher 点击目标设备即写 `prefs.lastDeviceAddress` + 同步 `BluetoothController.lastDeviceAddress`（连接失败也记住意图）；保留连接成功回写为双保险。
+- **docs 同步（本次 commit）**：恢复 stash 的 M1 完成状态更新（PROPOSAL/DESIGN），并将口径从"M2 待启动"小幅更新为"M1 完成 + M2 交互入口已实现（v0.2.x 迭代中）"；todo.md/journey.md 已是最新无需改动。
