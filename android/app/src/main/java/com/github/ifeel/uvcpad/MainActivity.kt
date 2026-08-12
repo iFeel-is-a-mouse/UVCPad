@@ -93,6 +93,8 @@ class MainActivity : CameraActivity() {
         // State save keys (keep the selected resolution mode across config changes / process recreation)
         private const val KEY_MODE_W = "key_mode_w"
         private const val KEY_MODE_H = "key_mode_h"
+        // [uvcpad-toast-singleton] Toast 全局单例：新消息先 cancel 旧消息再显示 → 最新优先、不排队堆积
+        private var sToast: Toast? = null
     }
 
     // [uvcpad-default-4by3-mem] 默认初始 4:3（1872×1404）。onCreate 会用 SharedPreferences
@@ -1061,6 +1063,9 @@ class MainActivity : CameraActivity() {
     }
 
     private fun toast(msg: String) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        // [uvcpad-toast-singleton] 单例复用：取消仍在展示/排队的旧 toast 再显示新消息，
+        // 避免 Android Toast 默认排队机制导致提示堆积（新消息冲不掉旧的）
+        sToast?.cancel()
+        sToast = Toast.makeText(this, msg, Toast.LENGTH_SHORT).also { it.show() }
     }
 }
