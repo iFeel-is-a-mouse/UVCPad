@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.text.method.ScrollingMovementMethod
+import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.Menu
@@ -410,6 +411,22 @@ class MainActivity : CameraActivity() {
                             prefs.saveResolution(currentModeW, currentModeH)
                         }
                         val requested = pendingModeW > 0 && pendingModeH > 0
+                        // [uvcpad-ratio-toggle] 请求 vs 实际协商日志：真机抓 logcat 确认 16:9
+                        // 协商失败回退（AUSBC 走 getSuitableSize 最近宽度回退，见调研报告）
+                        if (requested && actual != null) {
+                            if (actual.width != pendingModeW || actual.height != pendingModeH) {
+                                Log.w(
+                                    TAG,
+                                    "resolution fallback: requested ${pendingModeW}x$pendingModeH" +
+                                        ", negotiated ${actual.width}x${actual.height}"
+                                )
+                            } else {
+                                Log.i(
+                                    TAG,
+                                    "resolution negotiated OK: ${actual.width}x${actual.height}"
+                                )
+                            }
+                        }
                         val text = if (actual != null && requested &&
                             (actual.width != pendingModeW || actual.height != pendingModeH)
                         ) {
@@ -706,13 +723,17 @@ class MainActivity : CameraActivity() {
         }
 
         // --- 分辨率：16:9 ↔ 4:3（switchMode 复用现有；失败回滚时 currentModeW/H 不变 → 文案不变）---
+        // [uvcpad-ratio-toggle] 档位判断改为按宽高比（isSixteenNine），不再精确比较尺寸：
+        // 真机 1920×1080 协商失败回退 1600×1200（4:3 比例、非预设值）后，旧代码精确相等判断
+        // 失效 → else 分支永远切 4:3 → 16:9 分支进不去。按比例后：1600×1200 视为 4:3 档，
+        // 点击 → 切 16:9 预设（1920×1080）；若硬件仍不支持则 OPENED 回读回退尺寸并 toast 提示。
         updateModeButton()
         btnMode.setOnClickListener {
             keyBarController.resetAutoHideTimer()
-            if (currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H) {
-                switchMode(MODE_1080P_W, MODE_1080P_H)
-            } else {
+            if (isSixteenNine(currentModeW, currentModeH)) {
                 switchMode(MODE_4BY3_W, MODE_4BY3_H)
+            } else {
+                switchMode(MODE_1080P_W, MODE_1080P_H)
             }
             updateModeButton()
         }
@@ -738,13 +759,30 @@ class MainActivity : CameraActivity() {
     }
 
     /**
+     * 16:9 档位判断：按宽高比而非精确尺寸。
+     * [uvcpad-ratio-toggle] 真机反馈：1920×1080 协商失败回退 1600×1200（4:3 比例、非预设值）
+     * 后，旧代码“精确相等”判断失效 → 16:9 分支永远进不去。按比例判断后 1600×1200 归入
+     * 4:3 档，点击即可重新请求 16:9 预设。
+     * 整数交叉相乘比较（W*9 >= H*16）避免 float 误差：1920×1080 / 1280×720 等命中；
+     * 1600×1200 / 1872×1404 / 1024×768（4:3）不满足。
+     */
+    private fun isSixteenNine(w: Int, h: Int): Boolean =
+        w > 0 && h > 0 && w.toLong() * 9 >= h.toLong() * 16
+
+    /** 4:3 宽高比判断（整数交叉相乘）：W*3 == H*4，如 1600×1200、1872×1404、1024×768 */
+    private fun isFourThree(w: Int, h: Int): Boolean =
+        w > 0 && h > 0 && w.toLong() * 3 == h.toLong() * 4
+
+    /**
      * 分辨率按钮文案：跟随 currentModeW/H（= 相机实际协商尺寸，OPENED 回调回读）。
-     * 命中预设档位显示档位名；协商回退到其他尺寸（如 1600×1200）时如实显示实际分辨率。
+     * [uvcpad-ratio-toggle] 按比例归类：16:9 比例显示 "16:9"、4:3 比例显示 "4:3"
+     * （含协商回退的 1600×1200——用户看到 4:3 即知当前处于 4:3 档）；
+     * 罕见其他比例（如 5:4）如实显示实际尺寸。
      */
     private fun updateModeButton() {
         btnMode.text = when {
-            currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H -> "4:3"
-            currentModeW == MODE_1080P_W && currentModeH == MODE_1080P_H -> "16:9"
+            isSixteenNine(currentModeW, currentModeH) -> "16:9"
+            isFourThree(currentModeW, currentModeH) -> "4:3"
             else -> "$currentModeW×$currentModeH"
         }
     }
