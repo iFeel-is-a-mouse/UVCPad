@@ -85,3 +85,13 @@
   - 任意触摸（三角/按键栏/触控层）重置自动隐藏计时：`TransparentTouchLayer` 增 `onAnyTouch` 回调（最小改动）。
 - **布局**：`activity_main.xml` 增 `topUiContainer`（keyBar 在前、dropTriangle 在后 → 三角在上），Z 序在触控层之上；初始状态三角可见、按键栏 GONE。
 - **构建**：`./gradlew :app:assembleRelease :app:assembleDebug` 双 BUILD SUCCESSFUL——release arm64 精简版 4.0MB（4,232,690 B）、debug universal 19.5MB（20,474,453 B）；APK 内确认新图标资源（mipmap-anydpi-v26/ic_launcher + drawable 前后景）。
+
+## 三项用户偏好持久化记忆核实（2026-08-12，[uvcpad-prefs-mem]）
+
+- **需求（iFeel 2026-08-12 拍板）**：速度、自动配对、分辨率三项偏好必须全部持久化记忆，重启 App 后恢复。
+- **核实方法**：逐项检查"写入点 → prefs 存储 → 启动读取 → 生效点"闭环，全部在 HEAD 源码确认：
+  - **速度（speedLevel）**：✅ 完整。写入 btnSpeed 点击 `prefs.speedLevel = nextLevel`；onCreate `currentSpeedLevel = SpeedLevel.forLevel(prefs.speedLevel)`（先于 bindViews，btnSpeed.text 初始化用恢复值）；生效 setupTouchLayer `mouseSpeed/scrollSpeed = currentSpeedLevel.*`。
+  - **自动配对（autoPair）**：✅ 完整。写入 btnAutoPair 点击 `prefs.autoPair = enabled` + `BluetoothController.autoPairFlag = enabled`；onCreate 同步 `autoPairFlag = prefs.autoPair` 且 `if (prefs.autoPair) startAutoReconnect()`（启动恢复重连循环，KeysJoy 行为）；生效 onAppStatusChanged 自动连接 + 断开时重连循环。
+  - **分辨率（resolutionW/H）**：✅ 完整。写入 OPENED 回读 `saveResolution`（switchMode 预写 + OPENED 回读覆盖，回退尺寸如实记忆）；onCreate 恢复 `currentModeW/H = prefs.resolutionW/H`；生效 getCameraRequest 按记忆值请求。
+- **结论**：三项链路均闭环，无需代码改动（速度/自动配对恢复链路自 4ed1f58 即存在，分辨率 v0.2.4 落地，mem2 d202375 又补充"未插卡也可设置记忆"）。
+- **构建**：`./gradlew :app:assembleRelease` BUILD SUCCESSFUL——`app/build/outputs/apk/release/app-arm64-v8a-release.apk`（sha256 bacfcb3d…095297，4,365,339 B）。
