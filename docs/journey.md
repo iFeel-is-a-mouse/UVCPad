@@ -1,7 +1,7 @@
 # uvcpad 开发旅程（journey）
 
-> 简记 uvcpad 从需求到 M1 完成的开发历程。砍掉过程琐碎，留下决策与结论。
-> 关联：`docs/PROPOSAL.md`（需求）、`docs/DESIGN.md`（设计）、`docs/todo.md`（M2 待办）。
+> 简记 uvcpad 从需求到 v0.2.x 迭代的开发历程。砍掉过程琐碎，留下决策与结论。
+> 关联：`docs/PROPOSAL.md`（需求）、`docs/DESIGN.md`（设计）、`docs/todo.md`（M2/v0.2.x 待办）。
 
 ## 时间线总览
 
@@ -17,6 +17,8 @@
 | 触控对齐需求 | 2026-08-12 | iFeel 拍板：触控区域 = 显示区域（区域外不响应） |
 | 触控对齐实现 | 2026-08-12 | commit **2bd498b** + **6d36a24**（评审修复） |
 | M1 完成 | 2026-08-12 | main 决策：M1 ✅（待真机联调），M2 待启动，墨水屏适配列第一优先级 |
+| M2 交互入口 | 2026-08-12 | commit **25225c6**（图标 + 下拉三角 + 自动隐藏按键栏） |
+| v0.2.4→v0.2.9 迭代 | 2026-08-12 → 08-13 | 分辨率模式枚举 / 最近设备 / toast 单例 / 比例修复 / 图标兜底 / 按键栏打磨；质量修复批次完成（96e6b58 / 21e6640 / ff9abf4 / bf122c4） |
 
 ## 关键 commit 对照
 
@@ -27,6 +29,7 @@
 | 2cf23ba | P2 修复：首次启动（Android 12+）蓝牙 HID 注册不生效——权限串行链尾补触发 init（permissionDialogShown 标志） |
 | 2bd498b | 触控区域 = 显示区域：触控层动态对齐 AspectRatioTextureView 显示矩形（方案 A） |
 | 6d36a24 | 触控对齐评审修复：P1 修正 DESIGN §3.2.1 时序描述；P2 getChildAt(0) 加 TextureView 类型防御；P3 注释布局循环 |
+| 25225c6 | M2 交互入口：平板主题图标 + 下拉三角 + 自动隐藏按键栏（详见下文「M2 交互入口落地」） |
 
 ## M0 需求冻结（2026-08-11）
 
@@ -102,3 +105,58 @@
 - **Toast 单例化（298f150）**：用户反馈提示堆积、新消息冲不掉旧的 → `toast()` 改全局单例 `sToast`，先 `cancel()` 旧 toast 再显示新消息；全项目仅 MainActivity 调 Toast，无其他散落点。
 - **最近设备点击即记忆（6e8c7e8）**：用户澄清口径——showDeviceSwitcher 点击目标设备即写 `prefs.lastDeviceAddress` + 同步 `BluetoothController.lastDeviceAddress`（连接失败也记住意图）；保留连接成功回写为双保险。
 - **docs 同步（本次 commit）**：恢复 stash 的 M1 完成状态更新（PROPOSAL/DESIGN），并将口径从"M2 待启动"小幅更新为"M1 完成 + M2 交互入口已实现（v0.2.x 迭代中）"；todo.md/journey.md 已是最新无需改动。
+
+## v0.2.4 → v0.2.9 迭代（2026-08-12 → 08-13，质量修复批次收尾前）
+
+> v0.2.x 为迭代系列口径（commit 前缀 [uvcpad-*]）；注：`app/build.gradle` versionName 原为 0.1.0，质量批次已改 **0.2.9（versionCode 2，21e6640 提交）**。
+
+### 关键 commit 对照（本轮新增）
+
+| commit | 内容 |
+|---|---|
+| d7de1b0 | fix(resolution)：分辨率切换按宽高比判断档位，修复 1600×1200 回退后永远回不到 16:9 [uvcpad-ratio-toggle] |
+| 37ae486 | feat(bt)：自动连接优先最近成功连接的设备 + prefs 记忆 lastDeviceAddress [uvcpad-last-device] |
+| 298f150 | refactor(ui)：Toast 全局单例——新消息先 cancel 旧消息再显示 [uvcpad-toast-singleton] |
+| 6e8c7e8 | feat(bt)：点击设备即记忆最近设备并落盘——不等连接成功 [uvcpad-last-device-click] |
+| 74d25a0 | feat(resolution)：分辨率记忆改为模式枚举（0=4:3/1=16:9），不再记忆硬件回退值 [uvcpad-resolution-mode] |
+| ee62cb1 | fix(icon)：补 legacy mipmap 兜底 PNG（mdpi~xxxhdpi）[uvcpad-icon-fix] |
+| 0b45e2e | fix(ui)：按键栏按钮统一 KeyBarButton style（固定 40dp 高）[uvcpad-keybar-style] |
+| 21a958b | fix(ui)：按键栏按钮统一 14sp 字号 + wrap_content 高度自然等高；auto pair off 图标换 Unicode 15.1 断链 ⛓️💥 [uvcpad-keybar-font] |
+| 96e6b58 | fix(bt) 状态机收口 [uvcpad-fix-p1-p2]：手动断开 vs 自动重连冲突（manualDisconnectFlag）+ onServiceDisconnected 状态残留 + 单例监听泄漏（clearListeners）+ 卡死点健壮性（initInProgress/重试/终止条件） + 蓝牙调用点统一权限守卫 |
+| 21e6640 | fix(housekeeping) [uvcpad-fix-p3]：versionName 0.2.9（versionCode 2）+ 日志清理 + Toast applicationContext + uses-feature camera required=false + 死代码删除 + bondedDevices 兜底 + allowBackup=false；Manifest 显式剔除 RECORD_AUDIO（P2-7）+ sendReport 权限守卫（P2-8） |
+| ff9abf4 | fix(bt) 3 处真实 SecurityException 风险 [uvcpad-fix-p2]：bondedDevices 兜底 / ACTION_REQUEST_DISCOVERABLE / 切换 toast 设备名安全读取 |
+| bf122c4 | fix(bt) p2 重试收尾 [uvcpad-p2-retry-cleanup]：registerApp 3s 重试改字段持有 Runnable（可取消），onServiceDisconnected 复位标记 + 取消 pending 重试，防旧 proxy 误伤重连后的新 proxy |
+
+### 分辨率迭代（d7de1b0 + 74d25a0）
+
+- **真机反馈（1600×1200 回退）**：1920×1080 协商失败 → AUSBC 按最近宽度回退 1600×1200（4:3 比例、非预设值）——**采集卡不支持 1080p 是硬件限制**，非软件可修。旧代码"精确相等"判断失效 → 16:9 分支永远进不去；d7de1b0 改为按宽高比判断档位（`W*9 >= H*16` 整数交叉相乘），1600×1200/1872×1404/1024×768 归 4:3 档，点击即可重新请求 16:9 预设；OPENED 回读实际协商尺寸（含回退值）如实显示并 toast 提示。
+- **记忆改模式枚举（74d25a0）**：prefs 从 `resolution_w/h` 宽高对 → `resolution_mode` 枚举（0=4:3/1=16:9，默认 4:3）；只记忆**用户选择的模式**（按钮点击时写入），硬件回退值不回写记忆——换硬件后下次启动仍按用户模式请求预设；旧数据首次读时按宽高比一次性迁移（`migrateResolutionMode`，幂等）。
+- **墨水屏适配调研结论**（main/analyze）：分辨率档位已进按键栏 + 默认 4:3 对墨水屏负担更轻；定位门禁已放宽（BLUETOOTH_SCAN 声明 `neverForLocation`，S+ 豁免定位权限，4ed1f58 已含）；RECORD_AUDIO 来源确认为 AUSBC manifest 合并带入。
+
+### 最近设备记忆（37ae486 + 6e8c7e8）
+
+- **37ae486**：多设备场景自动连接优先"最近成功连接的设备"（`lastDeviceAddress`），而非系统返回的"最早配对"；连接成功回调写 prefs 落盘。
+- **6e8c7e8（口径澄清）**：showDeviceSwitcher 点击目标设备即写 prefs + 同步 `BluetoothController.lastDeviceAddress`（**不等连接成功**——连接失败也记住意图，下次仍优先尝试）；连接成功回写保留为双保险。
+
+### Toast 单例（298f150）
+
+- **用户反馈**：提示堆积、新消息冲不掉旧的。改全局单例 `sToast`：新消息先 `cancel()` 旧 toast 再显示——最新优先、不排队。全项目仅 MainActivity 调 Toast，无其他散落点。
+
+### 图标 legacy 兜底（ee62cb1）
+
+- **问题**：鸿蒙等 launcher 对 `mipmap-anydpi-v26` 支持不佳 → 图标显示异常/高度异常。补 legacy mipmap 兜底 PNG（mdpi~xxxhdpi 五档），自适应图标 + 密度 PNG 双保险。
+
+### 按键栏按钮统一（0b45e2e + 21a958b）
+
+- **0b45e2e**：按键栏按钮统一 `KeyBarButton` style（固定 40dp 高），根治高度不齐。
+- **21a958b（替代方案）**：固定 40dp 改回 `wrap_content` + 全部按钮统一 14sp 字号 → 行高一致 → 按钮自然等高（避免固定高度在不同字体缩放下的裁切/不齐）；auto pair off 图标换 Unicode 15.1 断链 ⛓️💥（旧 glyph 在部分字体缺失显示豆腐块）。
+
+### v0.2.9 质量修复批次（✅ 已完成 2026-08-13）
+
+- **状态机评审（2026-08-13 main 侧）**提出 P1/P2：① 手动断开后 auto-reconnect 仍按旧 target 重连（需区分主动断开与意外断开）；② `onServiceDisconnected` 后 proxy/状态清理残留；③ `object BluetoothController` 单例监听（deviceListener/disconnectListener）无清理路径（auditor P3 同源）；④ 重连 Handler/回调链卡死点排查。
+- **96e6b58（状态机收口）**：① `manualDisconnectFlag` 抑制 DISCONNECTED 自动重连/startAutoReconnect/onAppStatusChanged 三处自动连接；② 断连时清理 hostDevice/mpluggedDevice + stopAutoReconnect + 通知 UI；③ `clearListeners()` onDestroy 置空（单例泄漏，auditor P3 同源一并解决）；④ 卡死点：initInProgress 短路双 getProfileProxy、S1 注册失败 3s 重试、S7 重连 btHid==null 终止、S8 connect 失败单次重试、USB 授权 30s 超时重置；蓝牙调用点统一 hasConnectPermission 守卫（SecurityException 兜底）。
+- **21e6640（housekeeping）**：versionName 0.2.9（versionCode 2）、日志清理、Toast 改 applicationContext、camera `required=false`、删死代码、bondedDevices 兜底、`allowBackup=false`（prefs 含蓝牙地址，隐私考虑）；**RECORD_AUDIO 剔除**（AUSBC 合并带入，AudioSource.NONE 不需要，`tools:node="remove"`）+ sendReport 路径权限守卫。
+- **ff9abf4（SecurityException 兜底）**：3 处真实风险——bondedDevices 兜底 / ACTION_REQUEST_DISCOVERABLE / 切换 toast 设备名安全读取。
+- **bf122c4（p2 重试收尾）**：registerApp 3s 重试 Runnable 存字段可取消；onServiceDisconnected 复位 registerAppRetried + 取消 pending 重试——防旧 proxy 的残留重试误伤重连后的新 proxy。
+- **状态**：全部已提交，回填完成（journey/todo 同步）。
+

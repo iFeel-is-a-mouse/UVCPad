@@ -1,7 +1,7 @@
 # uvcpad 技术设计（M1 骨架整合）
 
 > 文档性质：M1 技术设计，基于两个存量项目真实源码（hdmi2mp / KeysJoy）的整合设计。
-> 状态：✅ **M1 已完成**（含触控区域=显示区域需求落地），编码+构建通过，待真机联调；**M2 交互入口已实现（v0.2.x 迭代中）**。
+> 状态：✅ **M1 已完成**（含触控区域=显示区域需求落地），编码+构建通过，待真机联调；✅ **M2 交互入口已实现（v0.2.x 迭代中）**；✅ **v0.2.9 质量修复批次已完成**（2026-08-13，状态机评审 P1/P2 + housekeeping + SecurityException 兜底 + 重试收尾，96e6b58/21e6640/ff9abf4/bf122c4，见 docs/todo.md）。
 > 关联文档：`docs/PROPOSAL.md`（需求理解，Q2/Q3 已确认：纯触控板、横屏唯一形态）；`docs/todo.md`（M2 待办清单）；`docs/journey.md`（开发历程）。
 
 ---
@@ -52,7 +52,7 @@ projects/uvcpad/
 │           │   ├── bt/reports/FeatureReport.kt                  # 原样复制
 │           │   ├── bt/senders/RelativeMouseSender.kt            # 原样复制
 │           │   ├── bt/listeners/ViewListener.kt                 # 原样复制（手势引擎）
-│           │   └── UvcpadPrefs.kt              # 新建：SharedPreferences 封装（speed_level/auto_pair/screen_on/auto_hide_ms）
+│           │   └── UvcpadPrefs.kt              # 新建：SharedPreferences 封装（speed_level/auto_pair/screen_on/auto_hide_ms + resolution_mode 模式枚举 + last_device_address，见 §3.7 注）
 │           └── res/
 │               ├── layout/activity_main.xml    # 改造自 hdmi2mp（加触控层/三角/按键栏）
 │               ├── xml/device_filter.xml       # 原样复制 hdmi2mp（UVC 类过滤 239/2, 14/1, 14/2）
@@ -106,8 +106,11 @@ dependencies {
 <uses-permission android:name="android.permission.BLUETOOTH" />
 <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />  <!-- API≤30 发现设备；Android 12/12L（API 31–32）若未声明 neverForLocation，则 BLUETOOTH_SCAN 也依赖定位权限；目标 S+ 且无定位需求时可声明 android:neverForLocation="true" 豁免 -->
+<uses-permission
+    android:name="android.permission.BLUETOOTH_SCAN"
+    android:usesPermissionFlags="neverForLocation"
+    tools:targetApi="s" />  <!-- 定位门禁已放宽（代码 4ed1f58 起）：uvcpad 不做扫描（HID 仅用 getProfileProxy/registerApp/connect），S+ 因 neverForLocation 豁免定位权限 -->
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />  <!-- 仅 API≤30 发现设备保留；S+ 已豁免，不请求定位权限 -->
 <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
 <uses-permission android:name="android.permission.VIBRATE" />     <!-- 手势触觉反馈（ViewListener 使用） -->
 <uses-permission android:name="android.permission.WAKE_LOCK" />   <!-- 常亮（FLAG_KEEP_SCREEN_ON） -->
@@ -148,7 +151,7 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
 │ MainActivity (: CameraActivity)        生命周期宿主/装配/权限/状态    │
 │ ├─ DropTriangleView（新建）             顶部下拉三角，事件豁免区       │
 │ ├─ KeyBarPanel（新建）+ KeyBarController  按键栏 + 4s 自动隐藏        │
-│ └─ errorText / statusText               错误与状态显示（复用 hdmi2mp）│
+│ └─ errorText                            错误显示（复用 hdmi2mp）；状态提示走 toast（M1 起 statusText 已移除，toast 为全局单例 [uvcpad-toast-singleton]，见 §3.7 注）│
 ├─ 触控层 ─────────────────────────────────────────────────────────────┤
 │ TransparentTouchLayer（新建，全屏透明 View，不绘制）                   │
 │ └─ ViewListener（复制 KeysJoy）        手势识别引擎（onTouch 入口）    │
@@ -299,9 +302,9 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
   | 按钮 | 行为（复用来源） |
   |---|---|
   | 速度（emoji 1️⃣–5️⃣ 循环） | `SpeedLevel.forLevel(next)`，写 SharedPreferences `speed_level`，更新 `viewListener.mouseSpeed/scrollSpeed`（复制 SelectDeviceActivity.setupToolbar 逻辑） |
-  | 蓝牙状态/设备名 | 点击 → 连接/断开；长按或弹窗 → `showDeviceSwitcher()` 多设备切换（复制 SelectDeviceActivity） |
+  | 蓝牙状态/设备名 | 点击 → 连接/断开；长按或弹窗 → `showDeviceSwitcher()` 多设备切换（复制 SelectDeviceActivity）。**点击目标设备即记忆最近设备并落盘** [uvcpad-last-device-click]（6e8c7e8）：不等连接成功，连接失败也记住意图；连接成功回调另有一次回写（双保险） |
   | 自动配对 🔗 | 切换 `BluetoothController.autoPairFlag` + `startAutoReconnect/stopAutoReconnect` |
-  | 分辨率（1080p ↔ 4:3） | `switchMode(MODE_1080P_W/H, …)` / `switchMode(1872, 1404, …)`（复制 hdmi2mp） |
+  | 分辨率（16:9 ↔ 4:3） | `switchMode(1920, 1080, MODE_16_9)` / `switchMode(1872, 1404, MODE_4_3)`（复制 hdmi2mp）。**记忆改模式枚举** [uvcpad-resolution-mode]（74d25a0）：点击写 `prefs.resolutionMode`（0=4:3/1=16:9），只记用户选择、不记硬件回退值；**档位按宽高比判断** [uvcpad-ratio-toggle]（d7de1b0）：1600×1200 等协商回退值归 4:3 档，16:9 档可再次请求 |
   | 截图 📷 | `captureJpg()`（复制 hdmi2mp，含 MediaStore 导入） |
   | 退出 ⏻ | 清理 + finish |
   **不含任何键盘设置项**（Q2 ✅）。
@@ -360,14 +363,16 @@ App 启动（USB attach 或 Launcher）
   ├─ UvcpadApplication.onCreate → CrashHandler.install
   ├─ MainActivity.onCreate
   │    ├─ 串行权限请求（相机→蓝牙→定位→存储）
-  │    ├─ 恢复偏好（分辨率模式 / speed_level / auto_pair / auto_hide_ms）
+  │    ├─ 恢复偏好：resolution_mode 模式枚举（0=4:3/1=16:9，默认 4:3，[uvcpad-resolution-mode] 74d25a0——只记忆
+  │    │    用户选择的模式，硬件回退值不写记忆）+ speed_level / auto_pair / auto_hide_ms
+  │    │    + last_device_address（[uvcpad-last-device] 37ae486，null=无记忆，首次自动连接回退 mpluggedDevice）
   │    ├─ FLAG_KEEP_SCREEN_ON（常亮，hdmi2mp + KeysJoy 默认行为）
   │    └─ 状态恢复 savedInstanceState（KEY_MODE_W/H，hdmi2mp 模式）
   ├─ onStart → BluetoothController.init + getSender/getDisconnector 注册（KeysJoy onStart 模式）
   ├─ AUSBC（USB 授权后自动）→ OPENED → 状态更新；ERROR → errorText（hdmi2mp onCameraState 模式）
   ├─ BT CONNECTED → 创建 sender + ViewListener → touchLayer 挂载手势
   ├─ BT DISCONNECTED → 卸载手势、置空 sender、提示（KeysJoy getDisconnector 模式）
-  ├─ 5s 自动重连循环（autoPair 开启时，BluetoothController.startAutoReconnect 原样）
+  ├─ 自动连接优先最近成功设备（lastDeviceAddress，无记忆回退 mpluggedDevice）；5s 自动重连循环（autoPair 开启时，BluetoothController.startAutoReconnect 原样）
   ├─ onStop → wasInBackground=true（KeysJoy 模式）；onResume 回来强制重初始化 BT（btHid 可能陈旧）
   ├─ 按键栏：三角点击 → show；4s 无操作 → hide（KeyBarController）
   └─ onDestroy → mainHandler 清空、BluetoothController.stopAutoReconnect、CrashHandler.setActiveActivity(null)、super.onDestroy()（AUSBC clear() 释放 UVC）
@@ -375,6 +380,7 @@ App 启动（USB attach 或 Launcher）
 
 **异常处理要点：**
 - `onCameraState ERROR`（UVC 打开失败/权限拒绝）→ 状态栏 + errorText，不崩溃（hdmi2mp 已实现，原样保留）。
+- **状态提示走 toast，且为全局单例** [uvcpad-toast-singleton]（298f150）：M1 起无 statusText 视图，OPENED/错误/蓝牙提示一律 `toast()`；单例先 `cancel()` 旧 toast 再显示新消息——最新优先、不排队堆积。
 - 蓝牙断开瞬间触摸层必须**先卸载监听再置空 sender**，避免 `sendReport` 到失效连接（KeysJoy 在 getDisconnector 回调里 `setOnTouchListener(null)` + 置空，照抄）。
 - `BluetoothController.onAppStatusChanged` 未注册自动重注册逻辑保留（KeysJoy 原样）。
 - 截图 `captureImage` 可能抛异常：hdmi2mp 已全 try-catch + 失败提示，原样保留。
@@ -438,7 +444,7 @@ App 启动（USB attach 或 Launcher）
 3. ✅ **蓝牙链路**：复制 `BluetoothController`（改鼠标专用描述符 + "uvcpad" 设备名）+ reports + senders + `ViewListener` + `SpeedLevel`；BT 权限；`onStart` init；连接回调装配（含 P2 修复：首次启动授权后链尾补 init）。
 4. ✅ **透明触控层**：`TransparentTouchLayer` 叠加 + 连接后挂载 ViewListener；断开卸载；另已落地"触控区域=显示区域"（§3.2.1）。
 5. ⬜ **联调（真机，待用户提供采集卡+PC 配对环境）**：PC 配对 → 单指移动/单击验证光标；临时验证 5 档速度（可先硬编码 level，正式入口在 M2 按键栏）。
-6. ✅ git init/commit（5 个 commit：4ed1f58/4abdc04/2cf23ba/2bd498b/6d36a24）；⬜ push（github 仓库 iFeel-is-a-mouse/uvcpad 未建）。
+6. ✅ git init/commit（5 个 commit：4ed1f58/4abdc04/2cf23ba/2bd498b/6d36a24）；⬜ push（remote 已配置 git@github.com:iFeel-is-a-mouse/uvcpad.git，仓库创建确认后 push；本地尚无 origin/main ref）。
 
 验收要点（编码侧状态；**真机验证留待用户，见 docs/todo.md M1 收尾遗留**）：
 - [x] 采集卡插入即全屏显示（1080p 默认；4:3 预留，M2 进菜单）— 编码就绪，真机待验
@@ -449,21 +455,23 @@ App 启动（USB attach 或 Launcher）
 
 ### 5.2 M2 透明层全量 + 交互入口（验收：全手势 + 三角 + 自动隐藏按键栏）
 
-实施顺序：
-1. **透明层打磨**：确认 onDraw 零绘制、全屏事件、无障碍无焦点闪烁。
-2. **下拉三角**：`DropTriangleView` + 事件豁免验证（点三角不产生鼠标报告）。
-3. **按键栏**：`KeyBarPanel` + `KeyBarController`（4s 自动隐藏、可配置）+ 合并菜单（速度/蓝牙/自动配对/分辨率/截图/退出）+ 区域事件消费验证。
-4. **手势全量回归**：两指滚动/双指右键/长按拖拽/双击拖拽（ViewListener 原样，主要验证与三角/按键栏的边界交互）。
-5. **坐标映射调参**：真机标定 speed 系数与 ramp（§7.2）。
-6. git commit + push。
+> 状态（2026-08-13）：交互入口已实现（25225c6）并历经 v0.2.x 迭代打磨；编码侧 ✅，真机侧待用户。
 
-验收要点：
-- [ ] 横屏下全部手势可用（移动/单击/右键/滚动/拖拽），画面透出正常
-- [ ] 点三角唤出按键栏；4s 无操作自动隐藏（时长可配）
-- [ ] 点三角/按键栏按钮**不产生**鼠标报告（豁免区 + 消费区）
-- [ ] 按键栏展开时栏外仍可正常触控
-- [ ] 按键栏无任何键盘设置项
-- [ ] 分辨率切换/截图/多设备切换/自动配对功能正常
+实施顺序（状态截至 2026-08-13）：
+1. ✅ **透明层打磨**：onDraw 零绘制、全屏事件；事件豁免与"触控区域=显示区域"（§3.2.1）已落地。
+2. ✅ **下拉三角**：`DropTriangleView` + 事件豁免（点三角不产生鼠标报告）；高对比修复（3f9d2f1）+ 缩小 1/3（11024e4）。
+3. ✅ **按键栏**：`KeyBarPanel` + `KeyBarController`（4s 自动隐藏、可配置）+ 合并菜单（速度/蓝牙/自动配对/分辨率/截图/退出）+ 区域事件消费；按钮统一 KeyBarButton style + 14sp 字号自然等高（0b45e2e/21a958b）；分辨率档位按宽高比判断 + 记忆改模式枚举（d7de1b0/74d25a0）。
+4. ⬜ **手势全量回归**：两指滚动/双指右键/长按拖拽/双击拖拽（ViewListener 原样，主要验证与三角/按键栏的边界交互）——**需真机**。
+5. ⬜ **坐标映射调参**：真机标定 speed 系数与 ramp（§6.3）——**需真机**。
+6. ⬜ git push（github 仓库待确认）；v0.2.9 质量修复批次已收尾（96e6b58/21e6640/ff9abf4/bf122c4）。
+
+验收要点（编码侧状态；**真机验证留待用户，见 docs/todo.md**）：
+- [x] 点三角唤出按键栏；4s 无操作自动隐藏（时长可配）— 编码就绪（KeyBarController hideGeneration 防竞态）
+- [x] 点三角/按键栏按钮**不产生**鼠标报告（豁免区 + 消费区）— 编码就绪（DOWN 消费 + panel 区域消费）
+- [x] 按键栏展开时栏外仍可正常触控 — 编码就绪（事件归属 ACTION_DOWN 模型）
+- [x] 按键栏无任何键盘设置项 — ✅（Q2，编码即满足）
+- [x] 分辨率切换/截图/多设备切换/自动配对功能正常 — 编码就绪（按键栏接线 + 分辨率迭代 d7de1b0/74d25a0），真机待验
+- [ ] 横屏下全部手势可用（移动/单击/右键/滚动/拖拽），画面透出正常 — **需真机**
 
 ---
 
