@@ -98,6 +98,12 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     /** [uvcpad-fix-p2] S1 registerApp 失败自动重试标记（仅重试一次） */
     private var registerAppRetried = false
 
+    /** [uvcpad-p2-retry-cleanup] registerApp 3s 重试 Handler（onServiceDisconnected 取消 pending 重试用） */
+    private var registerRetryHandler: Handler? = null
+
+    /** [uvcpad-p2-retry-cleanup] registerApp 3s 重试 Runnable（存字段以便取消；执行时读 this.btHid，不捕获旧 proxy） */
+    private var registerRetryRunnable: Runnable? = null
+
     /** [uvcpad-fix-p2] S8 切换设备 connect 失败的单次重试标记 */
     private var switchRetryScheduled = false
 
@@ -230,6 +236,12 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
             if (profile == BluetoothProfile.HID_DEVICE) {
                 initInProgress = false
                 btHid = null
+                // [uvcpad-p2-retry-cleanup] 复位 registerApp 重试标记 + 取消 pending 3s 重试：
+                // 否则残留 Runnable 持有旧 proxy，3s 后重试失败置 btHid=null，误伤重连后的新 proxy
+                registerAppRetried = false
+                registerRetryHandler?.removeCallbacksAndMessages(null)
+                registerRetryHandler = null
+                registerRetryRunnable = null
                 // [uvcpad-fix-p1] 状态残留清理：hostDevice/mpluggedDevice 一并清空，避免下次
                 // init 时误以为仍连接；disconnectListener 通知 UI 拆除触控层（MainActivity 侧
                 // runOnUiThread 包裹，binder 线程调用安全）；重连循环一并停止（btHid 已失效）
@@ -276,16 +288,26 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 updateStatus("HID reg failed, check BT permissions")
                 if (!registerAppRetried) {
                     registerAppRetried = true
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        if (tryRegisterApp(btHid)) {
-                            registerAppRetried = false
-                            updateStatus("HID registered. Search 'uvcpad' on target device")
-                        } else {
-                            registerAppRetried = false
-                            this.btHid = null
-                            updateStatus("HID reg failed, tap BT to retry")
+                    // [uvcpad-p2-retry-cleanup] 重试 Runnable 存字段（原匿名 postDelayed 无法取消）；
+                    // 执行时读 this.btHid 而非捕获旧 proxy；onServiceDisconnected 会取消 pending 重试
+                    registerRetryHandler?.removeCallbacksAndMessages(null)
+                    registerRetryHandler = Handler(Looper.getMainLooper())
+                    registerRetryRunnable = object : Runnable {
+                        override fun run() {
+                            registerRetryRunnable = null
+                            // 极端竞态下服务已断开且未被取消 → btHid 可能为 null，直接放弃，不误伤
+                            val proxy = this@BluetoothController.btHid ?: return
+                            if (tryRegisterApp(proxy)) {
+                                registerAppRetried = false
+                                updateStatus("HID registered. Search 'uvcpad' on target device")
+                            } else {
+                                registerAppRetried = false
+                                this@BluetoothController.btHid = null
+                                updateStatus("HID reg failed, tap BT to retry")
+                            }
                         }
-                    }, 3000L)
+                    }
+                    registerRetryRunnable?.let { registerRetryHandler?.postDelayed(it, 3000L) }
                 } else {
                     registerAppRetried = false
                     this.btHid = null
