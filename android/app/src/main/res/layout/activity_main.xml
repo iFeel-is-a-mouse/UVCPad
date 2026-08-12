@@ -108,9 +108,9 @@
                 android:textColor="@color/white"
                 android:textSize="16sp" />
 
-            <!-- 分辨率：1080p ↔ 4:3（switchMode 复用现有，按钮文案随 currentMode 更新） -->
+            <!-- 分辨率 1080p：点选切到 1080p（switchMode 复用现有；选中态由 updateModeButtons 高亮） -->
             <TextView
-                android:id="@+id/btnMode"
+                android:id="@+id/btnMode1080p"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
@@ -122,6 +122,23 @@
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp"
                 android:text="1080p"
+                android:textColor="@color/white"
+                android:textSize="13sp" />
+
+            <!-- 分辨率 4:3：点选切到 4:3（独立按钮；选中态由 updateModeButtons 高亮） -->
+            <TextView
+                android:id="@+id/btnMode4by3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_btn"
+                android:clickable="true"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="4:3"
                 android:textColor="@color/white"
                 android:textSize="13sp" />
 

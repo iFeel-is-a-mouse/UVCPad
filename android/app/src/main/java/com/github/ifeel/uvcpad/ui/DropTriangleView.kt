@@ -48,9 +48,9 @@ class DropTriangleView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // 三角：32dp 宽 × 16dp 高，顶部居中，指向下方（下拉指示）
-        val tw = dp(32f)
-        val th = dp(16f)
+        // 三角：11dp 宽 × 5dp 高（原 32×16 的约 1/3，用户反馈过大），顶部居中，指向下方（下拉指示）
+        val tw = dp(11f)
+        val th = dp(5f)
         val cx = w / 2f
         val top = dp(8f)
         trianglePath.reset()

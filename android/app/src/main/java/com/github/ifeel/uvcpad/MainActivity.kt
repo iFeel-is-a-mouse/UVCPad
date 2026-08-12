@@ -109,7 +109,8 @@ class MainActivity : CameraActivity() {
     private lateinit var btnSpeed: TextView
     private lateinit var btnBt: TextView
     private lateinit var btnAutoPair: TextView
-    private lateinit var btnMode: TextView
+    private lateinit var btnMode1080p: TextView
+    private lateinit var btnMode4by3: TextView
     private lateinit var btnCapture: TextView
     private lateinit var btnExit: TextView
 
@@ -426,7 +427,8 @@ class MainActivity : CameraActivity() {
         btnSpeed = findViewById(R.id.btnSpeed)
         btnBt = findViewById(R.id.btnBt)
         btnAutoPair = findViewById(R.id.btnAutoPair)
-        btnMode = findViewById(R.id.btnMode)
+        btnMode1080p = findViewById(R.id.btnMode1080p)
+        btnMode4by3 = findViewById(R.id.btnMode4by3)
         btnCapture = findViewById(R.id.btnCapture)
         btnExit = findViewById(R.id.btnExit)
 
@@ -633,16 +635,22 @@ class MainActivity : CameraActivity() {
             }
         }
 
-        // --- 分辨率：1080p ↔ 4:3（switchMode 复用现有；失败回滚时 currentModeW/H 不变 → 文案不变）---
-        updateModeButton()
-        btnMode.setOnClickListener {
+        // --- 分辨率：1080p / 4:3 两个独立按钮直接点选（switchMode 复用现有；
+        //     失败回滚时 currentModeW/H 不变 → updateModeButtons 高亮不变）---
+        updateModeButtons()
+        btnMode1080p.setOnClickListener {
             keyBarController.resetAutoHideTimer()
-            if (currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H) {
+            if (currentModeW != MODE_1080P_W || currentModeH != MODE_1080P_H) {
                 switchMode(MODE_1080P_W, MODE_1080P_H)
-            } else {
+            }
+            updateModeButtons()
+        }
+        btnMode4by3.setOnClickListener {
+            keyBarController.resetAutoHideTimer()
+            if (currentModeW != MODE_4BY3_W || currentModeH != MODE_4BY3_H) {
                 switchMode(MODE_4BY3_W, MODE_4BY3_H)
             }
-            updateModeButton()
+            updateModeButtons()
         }
 
         // --- 截图 📷（hdmi2mp captureJpg 原样复用）---
@@ -665,10 +673,14 @@ class MainActivity : CameraActivity() {
             ?: getString(R.string.keybar_bt_default)
     }
 
-    /** 分辨率按钮文案：跟随 currentModeW/H（switchMode 失败回滚时不变） */
-    private fun updateModeButton() {
-        btnMode.text =
-            if (currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H) "4:3" else "1080p"
+    /**
+     * 分辨率按钮选中态：跟随 currentModeW/H（switchMode 失败回滚时不变）。
+     * 当前模式按钮置 selected → bg_btn 加深背景高亮，另一按钮常规样式。
+     */
+    private fun updateModeButtons() {
+        val is4by3 = currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H
+        btnMode1080p.isSelected = !is4by3
+        btnMode4by3.isSelected = is4by3
     }
 
     /**
