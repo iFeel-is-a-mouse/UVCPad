@@ -859,6 +859,10 @@ class MainActivity : CameraActivity() {
             if (idx in 0 until devices.size) {
                 val target = devices[idx]
                 if (target.address != currentHost?.address) {
+                    // [uvcpad-last-device-click] 点击目标设备即记忆并落盘（不等连接成功：连接失败也
+                    // 记住意图，下次自动连接仍优先尝试）；连接成功回调另有一次回写（双保险，见 onStart 接线）
+                    prefs.lastDeviceAddress = target.address
+                    BluetoothController.lastDeviceAddress = target.address
                     BluetoothController.switchTo(target)
                     toast(getString(R.string.keybar_bt_switching, target.name))
                 }
