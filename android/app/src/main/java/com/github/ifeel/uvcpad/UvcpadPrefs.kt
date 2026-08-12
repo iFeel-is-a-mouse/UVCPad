@@ -14,6 +14,9 @@ import android.content.Context
  * - resolution_w/resolution_h: 分辨率记忆（宽高对，默认 4:3 1872×1404）— 相机 OPENED
  *   回读实际协商尺寸后写入（与"如实显示"逻辑一致，回退尺寸也如实记忆）；下次启动
  *   getCameraRequest() 直接请求记忆值，首次启动默认 4:3 [uvcpad-default-4by3-mem]
+ * - last_device_address: 最近成功连接过的蓝牙设备地址（null=无记忆，首次自动连接回退
+ *   mpluggedDevice）— 多设备场景自动连接优先"最近连接"而非系统返回的"最早配对"
+ *   [uvcpad-last-device]
  */
 class UvcpadPrefs(context: Context) {
 
@@ -65,6 +68,14 @@ class UvcpadPrefs(context: Context) {
         prefs.edit().putInt(KEY_RESOLUTION_W, width).putInt(KEY_RESOLUTION_H, height).apply()
     }
 
+    /** [uvcpad-last-device] 最近成功连接过的蓝牙设备地址；null=无记忆（首次自动连接回退 mpluggedDevice） */
+    var lastDeviceAddress: String?
+        get() = prefs.getString(KEY_LAST_DEVICE_ADDRESS, null)
+        set(value) {
+            // SharedPreferences 语义：putString(key, null) 等价于移除该 key（清除记忆）
+            prefs.edit().putString(KEY_LAST_DEVICE_ADDRESS, value).apply()
+        }
+
     companion object {
         const val KEY_SPEED_LEVEL = "speed_level"
         const val KEY_AUTO_PAIR = "auto_pair"
@@ -72,6 +83,7 @@ class UvcpadPrefs(context: Context) {
         const val KEY_AUTO_HIDE_MS = "auto_hide_ms"
         const val KEY_RESOLUTION_W = "resolution_w"
         const val KEY_RESOLUTION_H = "resolution_h"
+        const val KEY_LAST_DEVICE_ADDRESS = "last_device_address"
 
         const val DEFAULT_SPEED_LEVEL = 4
         const val DEFAULT_AUTO_HIDE_MS = 4000L

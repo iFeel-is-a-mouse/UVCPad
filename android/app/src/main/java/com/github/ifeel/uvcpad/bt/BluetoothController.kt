@@ -65,6 +65,16 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
 
     var mpluggedDevice :BluetoothDevice? = null
 
+    /**
+     * [uvcpad-last-device] 最近成功连接过的设备地址（自动连接优先目标）。
+     * 由 MainActivity 启动时从 prefs 注入；每次连接成功经 [lastDeviceConnectedListener] 回写 prefs。
+     * null = 无记忆，自动连接回退 mpluggedDevice（系统回调传入的设备）。
+     */
+    var lastDeviceAddress: String? = null
+
+    /** [uvcpad-last-device] 连接成功回调：MainActivity 用它把最近连接设备持久化到 prefs */
+    var lastDeviceConnectedListener: ((BluetoothDevice) -> Unit)? = null
+
     /** List of paired devices for device switching */
     val pairedDevices = mutableListOf<BluetoothDevice>()
     var targetSwitchDevice: BluetoothDevice? = null
@@ -77,6 +87,23 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     private var disconnectListener: (()->Unit)? = null
 
     /**
+     * [uvcpad-last-device] 自动连接的目标设备：优先最近成功连接过的设备（lastDeviceAddress，
+     * 多设备场景下系统 onAppStatusChanged 可能总返回最早配对的设备 → 总连错设备）；
+     * 无记忆或地址非法时回退系统回调的 mpluggedDevice。返回 null 表示当前无可自动连接目标。
+     */
+    fun resolveAutoConnectTarget(): BluetoothDevice? {
+        val lastAddr = lastDeviceAddress
+        if (!lastAddr.isNullOrEmpty()) {
+            try {
+                return btAdapter.getRemoteDevice(lastAddr)
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "Invalid last device address: $lastAddr, falling back to plugged device")
+            }
+        }
+        return mpluggedDevice
+    }
+
+    /**
      * Start a periodic reconnect loop that retries every [RECONNECT_INTERVAL_MS]
      * until the device reconnects, autopair is disabled, or the plugged device goes null.
      */
@@ -85,11 +112,15 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         reconnectHandler = Handler(Looper.getMainLooper())
         val runnable = object : Runnable {
             override fun run() {
-                if (!autoPairFlag || mpluggedDevice == null) {
+                if (!autoPairFlag) {
                     stopAutoReconnect()
                     return
                 }
-                val device = mpluggedDevice ?: return
+                // [uvcpad-last-device] 重连目标同样走 resolveAutoConnectTarget()：优先最近连接设备
+                val device = resolveAutoConnectTarget() ?: run {
+                    stopAutoReconnect()
+                    return
+                }
                 val state = btHid?.getConnectionState(device)
                 if (state == BluetoothProfile.STATE_CONNECTED) {
                     stopAutoReconnect()
@@ -238,6 +269,10 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 if (device != null) {
                     hostDevice = device
                     stopAutoReconnect()
+                    // [uvcpad-last-device] 每次连接成功都更新"最近连接"记忆（含手动切换成功：
+                    // 下次自动连接优先新设备），并经回调持久化到 prefs
+                    lastDeviceAddress = device.address
+                    lastDeviceConnectedListener?.invoke(device)
                     device?.let { dev ->
                         if (pairedDevices.none { it.address == dev.address }) {
                             pairedDevices.add(dev)
@@ -287,12 +322,19 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     }
                 }
                 updateStatus("HID app registered")
-                if (autoPairFlag && pluggedDevice != null) {
-                    try {
-                        btHid?.connect(pluggedDevice)
-                        Log.i(TAG, "Auto-connecting to previously paired device: ${pluggedDevice?.name}")
-                    } catch (e: Throwable) {
-                        Log.e(TAG, "Auto-connect in onAppStatusChanged failed", e)
+                if (autoPairFlag) {
+                    // [uvcpad-last-device] 自动连接目标优先"最近成功连接过的设备"（resolveAutoConnectTarget），
+                    // 无记忆时回退系统回调的 mpluggedDevice；目标为 null 时不自动连
+                    val target = resolveAutoConnectTarget()
+                    if (target != null) {
+                        try {
+                            btHid?.connect(target)
+                            Log.i(TAG, "Auto-connecting to device: ${target.name}")
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "Auto-connect in onAppStatusChanged failed", e)
+                        }
+                    } else {
+                        Log.w(TAG, "onAppStatusChanged: no auto-connect target")
                     }
                 }
             } else {

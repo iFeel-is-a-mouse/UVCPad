@@ -241,6 +241,13 @@ class MainActivity : CameraActivity() {
         if (prefs.autoPair) {
             BluetoothController.startAutoReconnect()
         }
+        // [uvcpad-last-device] 最近连接设备记忆（多设备自动连接选择）：启动时注入 prefs 记忆值；
+        // 每次连接成功经 lastDeviceConnectedListener 回写 prefs（手动切换成功也计入 →
+        // 下次自动连接优先新设备，符合"最近连接"语义）
+        BluetoothController.lastDeviceAddress = prefs.lastDeviceAddress
+        BluetoothController.lastDeviceConnectedListener = { device ->
+            prefs.lastDeviceAddress = device.address
+        }
         // Screen always-on (default ON, same behavior as hdmi2mp)
         if (prefs.screenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -323,6 +330,8 @@ class MainActivity : CameraActivity() {
         // DESIGN §3.7: stop auto-reconnect + clear the status listener + drop the crash-dialog ref
         BluetoothController.stopAutoReconnect()
         BluetoothController.statusListener = null
+        // [uvcpad-last-device] 清理连接成功回调：避免单例持有已销毁 Activity 引用
+        BluetoothController.lastDeviceConnectedListener = null
         // M2: 清除按键栏自动隐藏计时器与动画（hdmi2mp: removeCallbacksAndMessages 模式）
         if (::keyBarController.isInitialized) {
             keyBarController.destroy()
