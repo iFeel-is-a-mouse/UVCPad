@@ -17,7 +17,8 @@ import android.view.View
  * 不穿透进触控手势层 → 点三角不会误触成 tap→左键、不产生任何鼠标报告。
  * ACTION_MOVE 滑出热区（本 View bounds）标记取消；ACTION_UP 在热区内 → [onToggle]()。
  *
- * 视觉：小三角（半透明白色 + 阴影），在采集画面上清晰可见；
+ * 视觉：小三角（实心黑填充 + 白色描边，墨水屏高对比方案），
+ * 在浅色 PC 画面与深色墨水屏上都清晰可见；
  * 热区 = 本 View bounds（布局 48dp×48dp，≥ 设计下限，DESIGN §6.3）。
  */
 class DropTriangleView @JvmOverloads constructor(
@@ -32,17 +33,24 @@ class DropTriangleView @JvmOverloads constructor(
     private var cancelled = false
 
     private val trianglePath = Path()
-    private val trianglePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        // 半透明白色（约 60% 白）+ 轻微阴影，保证亮/暗画面上都可见
-        color = Color.argb(0x99, 0xFF, 0xFF, 0xFF)
-        setShadowLayer(dp(6f), 0f, dp(2f), Color.argb(0x66, 0x00, 0x00, 0x00))
+
+    /** 实心黑填充：e-ink 16 级灰阶下纯黑对比度最高，最易辨识 */
+    private val triangleFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+    }
+
+    /** 白色描边：在浅色 PC 画面上勾勒轮廓（阴影在墨水屏驱动上不渲染，故用描边替代） */
+    private val triangleStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = dp(2f)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // 小三角：24dp 宽 × 12dp 高，顶部居中，指向下方（下拉指示）
-        val tw = dp(24f)
-        val th = dp(12f)
+        // 三角：32dp 宽 × 16dp 高，顶部居中，指向下方（下拉指示）
+        val tw = dp(32f)
+        val th = dp(16f)
         val cx = w / 2f
         val top = dp(8f)
         trianglePath.reset()
@@ -54,7 +62,9 @@ class DropTriangleView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawPath(trianglePath, trianglePaint)
+        // 先描边后填充：白边保留在实心黑三角外侧，明/暗背景均清晰
+        canvas.drawPath(trianglePath, triangleStrokePaint)
+        canvas.drawPath(trianglePath, triangleFillPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
