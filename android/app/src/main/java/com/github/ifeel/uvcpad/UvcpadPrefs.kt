@@ -11,6 +11,9 @@ import android.content.Context
  * - auto_pair: default true — BluetoothController.autoPairFlag + startAutoReconnect
  * - screen_on: default true — FLAG_KEEP_SCREEN_ON
  * - auto_hide_ms: default 4000 — 按键栏自动隐藏时长（M2 使用，M1 仅预留读写）
+ * - resolution_w/resolution_h: 分辨率记忆（宽高对，默认 4:3 1872×1404）— 相机 OPENED
+ *   回读实际协商尺寸后写入（与"如实显示"逻辑一致，回退尺寸也如实记忆）；下次启动
+ *   getCameraRequest() 直接请求记忆值，首次启动默认 4:3 [uvcpad-default-4by3-mem]
  */
 class UvcpadPrefs(context: Context) {
 
@@ -40,13 +43,40 @@ class UvcpadPrefs(context: Context) {
             prefs.edit().putLong(KEY_AUTO_HIDE_MS, value).apply()
         }
 
+    /** [uvcpad-default-4by3-mem] 记忆的分辨率宽度（默认 4:3 的 1872） */
+    var resolutionW: Int
+        get() = prefs.getInt(KEY_RESOLUTION_W, DEFAULT_RESOLUTION_W)
+        set(value) {
+            prefs.edit().putInt(KEY_RESOLUTION_W, value).apply()
+        }
+
+    /** [uvcpad-default-4by3-mem] 记忆的分辨率高度（默认 4:3 的 1404） */
+    var resolutionH: Int
+        get() = prefs.getInt(KEY_RESOLUTION_H, DEFAULT_RESOLUTION_H)
+        set(value) {
+            prefs.edit().putInt(KEY_RESOLUTION_H, value).apply()
+        }
+
+    /**
+     * [uvcpad-default-4by3-mem] 宽高对一次性写入：避免两次单独 putInt 之间进程被杀
+     * 导致记忆的宽高不成对（如 1872×1080 这种不存在的组合）。
+     */
+    fun saveResolution(width: Int, height: Int) {
+        prefs.edit().putInt(KEY_RESOLUTION_W, width).putInt(KEY_RESOLUTION_H, height).apply()
+    }
+
     companion object {
         const val KEY_SPEED_LEVEL = "speed_level"
         const val KEY_AUTO_PAIR = "auto_pair"
         const val KEY_SCREEN_ON = "screen_on"
         const val KEY_AUTO_HIDE_MS = "auto_hide_ms"
+        const val KEY_RESOLUTION_W = "resolution_w"
+        const val KEY_RESOLUTION_H = "resolution_h"
 
         const val DEFAULT_SPEED_LEVEL = 4
         const val DEFAULT_AUTO_HIDE_MS = 4000L
+        // 首次启动默认 4:3（1872×1404），与 MainActivity.MODE_4BY3_W/H 一致
+        const val DEFAULT_RESOLUTION_W = 1872
+        const val DEFAULT_RESOLUTION_H = 1404
     }
 }

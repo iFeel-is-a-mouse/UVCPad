@@ -94,8 +94,10 @@ class MainActivity : CameraActivity() {
         private const val KEY_MODE_H = "key_mode_h"
     }
 
-    private var currentModeW = MODE_1080P_W
-    private var currentModeH = MODE_1080P_H
+    // [uvcpad-default-4by3-mem] 默认初始 4:3（1872×1404）。onCreate 会用 SharedPreferences
+    // 记忆值覆盖（首次启动无记忆 = 保持 4:3 默认；记忆了上次选择则恢复上次尺寸）。
+    private var currentModeW = MODE_4BY3_W
+    private var currentModeH = MODE_4BY3_H
 
     /**
      * 分辨率切换请求目标（AUSBC 3.6.0 updateResolution 是异步的：closeCamera + 1s 后重开相机，
@@ -217,12 +219,21 @@ class MainActivity : CameraActivity() {
         super.onCreate(savedInstanceState)
         // Register the active Activity reference for the global crash self-capture (lets CrashHandler show the full-screen crash dialog)
         CrashHandler.setActiveActivity(this)
-        // Restore the previously selected resolution mode (keeps the user's choice when the process is recreated)
-        if (savedInstanceState != null) {
-            currentModeW = savedInstanceState.getInt(KEY_MODE_W, MODE_1080P_W)
-            currentModeH = savedInstanceState.getInt(KEY_MODE_H, MODE_1080P_H)
-        }
         prefs = UvcpadPrefs(this)
+        // [uvcpad-default-4by3-mem] 恢复上次分辨率选择：savedInstanceState（旋转等配置变更 /
+        // 进程重建，值最新）优先，否则取 SharedPreferences 记忆值；首次启动无记忆 =
+        // 默认 4:3 1872×1404（UvcpadPrefs.DEFAULT_RESOLUTION_W/H）。
+        if (savedInstanceState != null) {
+            currentModeW = savedInstanceState.getInt(KEY_MODE_W, prefs.resolutionW)
+            currentModeH = savedInstanceState.getInt(KEY_MODE_H, prefs.resolutionH)
+        } else {
+            currentModeW = prefs.resolutionW
+            currentModeH = prefs.resolutionH
+        }
+        // 初始请求与 switchMode 共用同一套异步回读逻辑（v0.2.3）：把请求目标记为 pending，
+        // OPENED 回读实际协商尺寸——首次 4:3 请求若 EDID 不支持而回退，同样如实显示并提示。
+        pendingModeW = currentModeW
+        pendingModeH = currentModeH
         currentSpeedLevel = SpeedLevel.forLevel(prefs.speedLevel)
         // Auto-pair toggle (KeysJoy pattern): sync flag + start the reconnect loop when enabled
         BluetoothController.autoPairFlag = prefs.autoPair
@@ -358,8 +369,10 @@ class MainActivity : CameraActivity() {
             // frame rate explicitly (no setFps/setPreviewFps etc.), so 60fps is not requested
             // explicitly; rely on UVC default negotiation: the MS2130 outputs up to
             // 1920×1080@60 (MJPEG) per its device descriptor.
-            .setPreviewWidth(MODE_1080P_W)
-            .setPreviewHeight(MODE_1080P_H)
+            // [uvcpad-default-4by3-mem] 请求尺寸跟随 currentModeW/H（onCreate 恢复的记忆值；
+            // 首次启动 = 4:3 1872×1404），不再硬编码 1080p。
+            .setPreviewWidth(currentModeW)
+            .setPreviewHeight(currentModeH)
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
             .setDefaultRotateType(RotateType.ANGLE_0)
             // No audio needed
@@ -392,6 +405,9 @@ class MainActivity : CameraActivity() {
                             // （用户反馈"点击都是 1080p"的根因）。
                             currentModeW = actual.width
                             currentModeH = actual.height
+                            // [uvcpad-default-4by3-mem] 记忆上次选择：以实际协商结果为准写入
+                            // （协商回退的尺寸也如实记忆），下次启动直接请求该尺寸。
+                            prefs.saveResolution(currentModeW, currentModeH)
                         }
                         val requested = pendingModeW > 0 && pendingModeH > 0
                         val text = if (actual != null && requested &&
@@ -676,7 +692,7 @@ class MainActivity : CameraActivity() {
             }
         }
 
-        // --- 分辨率：1080p ↔ 4:3（switchMode 复用现有；失败回滚时 currentModeW/H 不变 → 文案不变）---
+        // --- 分辨率：16:9 ↔ 4:3（switchMode 复用现有；失败回滚时 currentModeW/H 不变 → 文案不变）---
         updateModeButton()
         btnMode.setOnClickListener {
             keyBarController.resetAutoHideTimer()
@@ -715,7 +731,7 @@ class MainActivity : CameraActivity() {
     private fun updateModeButton() {
         btnMode.text = when {
             currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H -> "4:3"
-            currentModeW == MODE_1080P_W && currentModeH == MODE_1080P_H -> "1080p"
+            currentModeW == MODE_1080P_W && currentModeH == MODE_1080P_H -> "16:9"
             else -> "$currentModeW×$currentModeH"
         }
     }

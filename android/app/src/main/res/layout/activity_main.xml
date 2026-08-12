@@ -108,7 +108,7 @@
                 android:textColor="@color/white"
                 android:textSize="16sp" />
 
-            <!-- 分辨率：1080p ↔ 4:3（switchMode 复用现有，按钮文案随 currentMode 更新） -->
+            <!-- 分辨率：16:9 ↔ 4:3（switchMode 复用现有，按钮文案随 currentMode 更新） -->
             <TextView
                 android:id="@+id/btnMode"
                 android:layout_width="wrap_content"
@@ -121,7 +121,7 @@
                 android:paddingEnd="10dp"
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp"
-                android:text="1080p"
+                android:text="16:9"
                 android:textColor="@color/white"
                 android:textSize="13sp" />
 
