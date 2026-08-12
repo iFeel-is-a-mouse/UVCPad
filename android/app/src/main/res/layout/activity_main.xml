@@ -57,89 +57,54 @@
 
             <!-- 速度：1️⃣–5️⃣ 循环（SpeedLevel，写 prefs "speed_level"，更新 viewListener.mouseSpeed/scrollSpeed） -->
             <TextView
+                style="@style/KeyBarButton"
                 android:id="@+id/btnSpeed"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_btn"
-                android:clickable="true"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
                 android:text="4️⃣"
-                android:textColor="@color/white"
                 android:textSize="16sp" />
 
             <!-- 蓝牙：显示设备名/状态；点击连接/断开；长按 → 多设备切换（showDeviceSwitcher） -->
             <TextView
+                style="@style/KeyBarButton"
                 android:id="@+id/btnBt"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_btn"
-                android:clickable="true"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
                 android:text="📡"
-                android:textColor="@color/white"
                 android:textSize="13sp" />
 
             <!-- 自动配对 🔗：切换 autoPairFlag + startAutoReconnect/stopAutoReconnect -->
             <TextView
+                style="@style/KeyBarButton"
                 android:id="@+id/btnAutoPair"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_btn"
-                android:clickable="true"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
                 android:text="🔗"
-                android:textColor="@color/white"
                 android:textSize="16sp" />
 
             <!-- 分辨率：16:9 ↔ 4:3（switchMode 复用现有，按钮文案随 currentMode 更新） -->
             <TextView
+                style="@style/KeyBarButton"
                 android:id="@+id/btnMode"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_btn"
-                android:clickable="true"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
                 android:text="16:9"
-                android:textColor="@color/white"
                 android:textSize="13sp" />
 
             <!-- 截图 📷：captureJpg()（含 MediaStore 导入） -->
             <TextView
+                style="@style/KeyBarButton"
                 android:id="@+id/btnCapture"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_btn"
-                android:clickable="true"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
                 android:text="📷"
-                android:textColor="@color/white"
                 android:textSize="16sp" />
 
             <!-- 弹性空隙：把退出按钮推到最右（hdmi2mp 惯例），同时让三角（顶部居中）
@@ -151,19 +116,12 @@
 
             <!-- 退出 ⏻：清理 + finish（onDestroy → AUSBC clear() 释放 UVC） -->
             <TextView
+                style="@style/KeyBarButton"
                 android:id="@+id/btnExit"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_btn"
-                android:clickable="true"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
                 android:text="⏻"
-                android:textColor="@color/white"
                 android:textSize="16sp" />
         </com.github.ifeel.uvcpad.ui.KeyBarPanel>
 

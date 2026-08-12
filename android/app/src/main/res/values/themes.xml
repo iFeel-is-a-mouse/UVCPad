@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- [uvcpad-keybar-style] 按键栏按钮统一样式（根治按钮高度不齐）：
+         固定 40dp 高度 + 内容居中；垂直 padding 由固定高度接管，仅保留水平内边距。
+         字号不进 style —— 速度/截图/退出 16sp、蓝牙/分辨率 13sp 保持各自差异。
+         singleLine：蓝牙设备名过长时单行省略（配合按钮自身的 ellipsize="end"）。 -->
+    <style name="KeyBarButton">
+        <item name="android:layout_height">40dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_btn</item>
+        <item name="android:clickable">true</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
     <style name="Theme.Uvcpad" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/black</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
