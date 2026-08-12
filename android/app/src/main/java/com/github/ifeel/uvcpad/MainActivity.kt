@@ -497,30 +497,43 @@ class MainActivity : CameraActivity() {
      * Switch the capture resolution preset (kept from hdmi2mp for the M2 key bar).
      * M1 note: the toolbar button/highlight params were dropped together with the toolbar
      * (改造点①); M2 key-bar buttons will call this directly.
+     *
+     * [uvcpad-prefs-mem2] 分辨率设置与采集卡状态解耦（用户 2026-08-12 拍板）：
+     * 无论是否插卡，点击按钮总是先更新 currentModeW/H + 写入 SharedPreferences（记忆），
+     * 按钮文案立即跟随（调用方随后 updateModeButton()）；未插卡时不再拒绝设置——
+     * 只记忆不触发 updateResolution（相机未开，无意义），轻提示插卡后生效；
+     * 插卡后 getCameraRequest() 按最新记忆值请求（AUSBC 重开/拔插走同一路径，自然满足）。
+     * 已插卡路径保持原行为：pending → updateResolution → OPENED 回读实际协商尺寸 →
+     * saveResolution 同步记忆（回退尺寸也如实记忆，覆盖本次预写值）。
      */
     private fun switchMode(width: Int, height: Int) {
-        if (!isCameraOpened()) {
-            toast(getString(R.string.status_waiting))
-            return
-        }
-        // AUSBC 3.6.0: updateResolution is asynchronous — it internally closeCamera() and
-        // re-opens the camera 1s later, auto-negotiating the closest supported size; it does
-        // NOT throw on an unsupported size (only logs when the camera is not open / recording).
-        // So the request target is recorded here and the actual negotiated result is read back
-        // in onCameraState(OPENED) via getCurrentPreviewSize(); currentModeW/H are only updated
-        // there, keeping the UI truthful to the real camera state (hdmi2mp P3-L1 rollback,
-        // adapted for AUSBC's async switch).
-        pendingModeW = width
-        pendingModeH = height
-        try {
-            updateResolution(width, height)
-        } catch (e: Exception) {
-            // Defensive: AUSBC does not normally throw here, but surface any failure loudly
-            pendingModeW = 0
-            pendingModeH = 0
-            val msg = getString(R.string.status_error, e.message ?: e.javaClass.simpleName)
-            showError(msg)
-            toast(msg)
+        // 设置总是可变更：先更新记忆（currentModeW/H + prefs），插卡生效依赖 getCameraRequest()
+        currentModeW = width
+        currentModeH = height
+        prefs.saveResolution(width, height)
+        if (isCameraOpened()) {
+            // AUSBC 3.6.0: updateResolution is asynchronous — it internally closeCamera() and
+            // re-opens the camera 1s later, auto-negotiating the closest supported size; it does
+            // NOT throw on an unsupported size (only logs when the camera is not open / recording).
+            // So the request target is recorded here and the actual negotiated result is read back
+            // in onCameraState(OPENED) via getCurrentPreviewSize(); currentModeW/H are only updated
+            // there, keeping the UI truthful to the real camera state (hdmi2mp P3-L1 rollback,
+            // adapted for AUSBC's async switch).
+            pendingModeW = width
+            pendingModeH = height
+            try {
+                updateResolution(width, height)
+            } catch (e: Exception) {
+                // Defensive: AUSBC does not normally throw here, but surface any failure loudly
+                pendingModeW = 0
+                pendingModeH = 0
+                val msg = getString(R.string.status_error, e.message ?: e.javaClass.simpleName)
+                showError(msg)
+                toast(msg)
+            }
+        } else {
+            // 未插卡：不触发 updateResolution（相机未开，无意义），仅轻提示记忆已生效、插卡后生效
+            toast(getString(R.string.status_mode_pending, "$width×$height"))
         }
     }
 
