@@ -1,6 +1,7 @@
 package com.github.ifeel.uvcpad
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
@@ -14,6 +15,8 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.text.method.ScrollingMovementMethod
 import android.util.Log
 import android.view.Gravity
@@ -147,6 +150,9 @@ class MainActivity : CameraActivity() {
     // every attach intent; cleared as soon as the user grants permission (from hdmi2mp verbatim)
     private var usbHintActive = false
 
+    /** [uvcpad-fix-p2] C1：USB 授权提示超时重置定时器（忽略弹窗后 30s 失效，下次 attach 再提示） */
+    private val usbHintHandler = Handler(Looper.getMainLooper())
+
     // Track whether activity was in background (for BT lifecycle re-init, KeysJoy pattern)
     private var wasInBackground = false
 
@@ -244,6 +250,8 @@ class MainActivity : CameraActivity() {
         currentSpeedLevel = SpeedLevel.forLevel(prefs.speedLevel)
         // Auto-pair toggle (KeysJoy pattern): sync flag + start the reconnect loop when enabled
         BluetoothController.autoPairFlag = prefs.autoPair
+        // [uvcpad-fix-p1] 新会话重置手动断开标记（避免上次手动断开残留阻塞本次自动连接）
+        BluetoothController.manualDisconnectFlag = false
         if (prefs.autoPair) {
             BluetoothController.startAutoReconnect()
         }
@@ -335,9 +343,13 @@ class MainActivity : CameraActivity() {
     override fun onDestroy() {
         // DESIGN §3.7: stop auto-reconnect + clear the status listener + drop the crash-dialog ref
         BluetoothController.stopAutoReconnect()
-        BluetoothController.statusListener = null
+        // [uvcpad-fix-p1] 单例回调清空：deviceListener/disconnectListener/statusListener 一并置空，
+        // 防止单例持有已销毁 Activity 的 lambda 引用泄漏
+        BluetoothController.clearListeners()
         // [uvcpad-last-device] 清理连接成功回调：避免单例持有已销毁 Activity 引用
         BluetoothController.lastDeviceConnectedListener = null
+        // [uvcpad-fix-p2] C1：清理 USB 提示超时重置任务
+        usbHintHandler.removeCallbacksAndMessages(null)
         // M2: 清除按键栏自动隐藏计时器与动画（hdmi2mp: removeCallbacksAndMessages 模式）
         if (::keyBarController.isInitialized) {
             keyBarController.destroy()
@@ -469,6 +481,7 @@ class MainActivity : CameraActivity() {
                         toast(text)
                         // Opened successfully: clear any previous error/permission hints (including the USB guidance hint)
                         usbHintActive = false
+                        usbHintHandler.removeCallbacksAndMessages(null)
                         clearError()
                     }
                     ICameraStateCallBack.State.CLOSED -> {
@@ -694,18 +707,21 @@ class MainActivity : CameraActivity() {
             keyBarController.resetAutoHideTimer()
             val host = BluetoothController.hostDevice
             if (host != null) {
-                // Connected → disconnect
-                BluetoothController.btHid?.disconnect(host)
+                // Connected → disconnect（[uvcpad-fix-p1] 置手动断开标记，抑制 DISCONNECTED 后的自动重连）
+                BluetoothController.manualDisconnectFlag = true
+                BluetoothController.tryDisconnect(host)
                 BluetoothController.hostDevice = null
                 updateBtButton()
                 toast(getString(R.string.keybar_bt_disconnected))
             } else {
                 // Disconnected → try connect to the previously paired device
                 BluetoothController.mpluggedDevice?.let { device ->
-                    if (BluetoothController.btHid?.getConnectionState(device) ==
+                    if (btConnectionState(device) ==
                         BluetoothProfile.STATE_DISCONNECTED
                     ) {
-                        BluetoothController.btHid?.connect(device)
+                        // [uvcpad-fix-p1] 手动连接意图：清手动断开标记再连
+                        BluetoothController.manualDisconnectFlag = false
+                        BluetoothController.tryConnect(device)
                         toast(getString(R.string.keybar_bt_connecting))
                     }
                 } ?: toast(getString(R.string.keybar_bt_no_device))
@@ -726,13 +742,15 @@ class MainActivity : CameraActivity() {
             BluetoothController.autoPairFlag = enabled
             btnAutoPair.text = if (enabled) "🔗" else "⛓️‍💥"
             if (enabled) {
+                // [uvcpad-fix-p1] 重新开启自动配对 = 新的自动连接意图 → 清除手动断开标记
+                BluetoothController.manualDisconnectFlag = false
                 BluetoothController.startAutoReconnect()
                 // KeysJoy: 开启自动配对时立即尝试连接已配对设备
                 BluetoothController.mpluggedDevice?.let { device ->
-                    if (BluetoothController.btHid?.getConnectionState(device) ==
+                    if (btConnectionState(device) ==
                         BluetoothProfile.STATE_DISCONNECTED
                     ) {
-                        BluetoothController.btHid?.connect(device)
+                        BluetoothController.tryConnect(device)
                     }
                 }
                 toast(getString(R.string.keybar_auto_pair_on))
@@ -776,8 +794,9 @@ class MainActivity : CameraActivity() {
     /** 蓝牙按钮文案：已连接显示设备名，未连接显示默认提示 */
     private fun updateBtButton() {
         val host = BluetoothController.hostDevice
-        btnBt.text = host?.name?.let { getString(R.string.keybar_bt_connected, it) }
-            ?: getString(R.string.keybar_bt_default)
+        val name = btDeviceName(host)
+        btnBt.text = if (name.isNotEmpty()) getString(R.string.keybar_bt_connected, name)
+            else getString(R.string.keybar_bt_default)
     }
 
     /**
@@ -816,13 +835,16 @@ class MainActivity : CameraActivity() {
     private fun showDeviceSwitcher() {
         if (!::btnBt.isInitialized) return
         val popup = PopupMenu(this, btnBt, Gravity.START)
-        val devices = BluetoothController.pairedDevices.toList()
+        // [uvcpad-fix-p3] pairedDevices 为空时用系统已配对列表兜底填充
+        val devices = BluetoothController.pairedDevices.toList().ifEmpty {
+            BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList() ?: emptyList()
+        }
         val currentHost = BluetoothController.hostDevice
 
         // Connected device header (disabled)
         if (currentHost != null) {
             popup.menu.add(
-                Menu.NONE, -1, 0, getString(R.string.keybar_popup_connected, currentHost.name)
+                Menu.NONE, -1, 0, getString(R.string.keybar_popup_connected, btDeviceName(currentHost))
             ).isEnabled = false
         } else {
             popup.menu.add(Menu.NONE, -1, 0, getString(R.string.keybar_popup_no_device))
@@ -836,8 +858,9 @@ class MainActivity : CameraActivity() {
         // Paired devices list
         var itemId = 0
         for (device in devices) {
+            val name = btDeviceName(device)
             val label =
-                if (device.address == currentHost?.address) "▶ ${device.name}" else "  ${device.name}"
+                if (device.address == currentHost?.address) "▶ $name" else "  $name"
             popup.menu.add(Menu.NONE, itemId, itemId + 3, label)
             itemId++
         }
@@ -1004,15 +1027,41 @@ class MainActivity : CameraActivity() {
     }
 
     /**
-     * Checks whether the BT runtime permissions required by this app are granted
-     * (KeysJoy pattern, adjusted for the neverForLocation exemption on S+).
+     * [uvcpad-fix-p2] 连接守卫（API≤30 放宽）：定位权限只影响"发现新设备"，不影响
+     * "已配对设备连接"——本应用不做主动扫描（无 startDiscovery），≤30 时 BLUETOOTH/
+     * BLUETOOTH_ADMIN 为普通权限（安装即授予）→ 直接放行，避免定位权限门禁过严导致
+     * 已配对设备无法连接。发现/扫描路径如需恢复，另行使用严格版守卫（要求定位权限）。
      */
     private fun checkBluetoothPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
                 checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
         } else {
-            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            true
+        }
+    }
+
+    /**
+     * [uvcpad-fix-p2] 安全读取设备名（S+ 无 BLUETOOTH_CONNECT 时回退地址，避免 SecurityException）
+     */
+    @SuppressLint("MissingPermission")
+    private fun btDeviceName(device: BluetoothDevice?): String {
+        return try {
+            device?.name ?: device?.address ?: ""
+        } catch (e: SecurityException) {
+            device?.address ?: ""
+        }
+    }
+
+    /**
+     * [uvcpad-fix-p2] 安全读取连接状态（S+ getConnectionState 需要 BLUETOOTH_CONNECT）
+     */
+    @SuppressLint("MissingPermission")
+    private fun btConnectionState(device: BluetoothDevice): Int? {
+        return try {
+            BluetoothController.btHid?.getConnectionState(device)
+        } catch (e: SecurityException) {
+            null
         }
     }
 
@@ -1035,6 +1084,7 @@ class MainActivity : CameraActivity() {
         if (device == null) return
         if (usbManager.hasPermission(device)) {
             // The user has already granted permission via the system dialog (this path may also be reached before camera OPENED): clear the stale guidance hint
+            usbHintHandler.removeCallbacksAndMessages(null)
             if (usbHintActive) {
                 usbHintActive = false
                 clearError()
@@ -1046,6 +1096,12 @@ class MainActivity : CameraActivity() {
             val msg = getString(R.string.usb_permission_hint)
             showError(msg)
             toast(msg)
+            // [uvcpad-fix-p2] C1：忽略弹窗后 30s 重置提示标记 → 下次 attach intent（或再插拔）
+            // 会再次提示；授权成功（hasPermission 分支 / 相机 OPENED / onDestroy）时取消该重置任务
+            usbHintHandler.removeCallbacksAndMessages(null)
+            usbHintHandler.postDelayed({
+                usbHintActive = false
+            }, 30_000L)
         }
     }
 
@@ -1080,7 +1136,8 @@ class MainActivity : CameraActivity() {
     private fun toast(msg: String) {
         // [uvcpad-toast-singleton] 单例复用：取消仍在展示/排队的旧 toast 再显示新消息，
         // 避免 Android Toast 默认排队机制导致提示堆积（新消息冲不掉旧的）
+        // [uvcpad-fix-p3] 用 applicationContext 创建 Toast：静态 sToast 不再持有 Activity 引用
         sToast?.cancel()
-        sToast = Toast.makeText(this, msg, Toast.LENGTH_SHORT).also { it.show() }
+        sToast = Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).also { it.show() }
     }
 }
