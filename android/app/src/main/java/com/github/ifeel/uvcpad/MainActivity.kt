@@ -97,6 +97,15 @@ class MainActivity : CameraActivity() {
     private var currentModeW = MODE_1080P_W
     private var currentModeH = MODE_1080P_H
 
+    /**
+     * 分辨率切换请求目标（AUSBC 3.6.0 updateResolution 是异步的：closeCamera + 1s 后重开相机，
+     * 内部自动协商最接近支持尺寸；不抛异常）。实际协商结果在 onCameraState(OPENED) 里通过
+     * getCurrentPreviewSize() 回读——用 pending 记录请求目标，供 OPENED 回调判断是否回退。
+     * 0 表示无进行中的切换请求。
+     */
+    private var pendingModeW = 0
+    private var pendingModeH = 0
+
     private lateinit var errorText: TextView
     private lateinit var touchLayer: TransparentTouchLayer
     private lateinit var rootLayout: View
@@ -109,8 +118,7 @@ class MainActivity : CameraActivity() {
     private lateinit var btnSpeed: TextView
     private lateinit var btnBt: TextView
     private lateinit var btnAutoPair: TextView
-    private lateinit var btnMode1080p: TextView
-    private lateinit var btnMode4by3: TextView
+    private lateinit var btnMode: TextView
     private lateinit var btnCapture: TextView
     private lateinit var btnExit: TextView
 
@@ -377,10 +385,35 @@ class MainActivity : CameraActivity() {
                 when (code) {
                     ICameraStateCallBack.State.OPENED -> {
                         val actual = getCurrentPreviewSize()
-                        val text = if (actual != null) {
-                            getString(R.string.status_opened, "${actual.width}×${actual.height}")
+                        if (actual != null) {
+                            // 以相机实际协商尺寸为准：AUSBC 会回退到最接近支持尺寸
+                            // （如 4:3 档 1872×1404 在无此分辨率的设备上回退 1920×1080），
+                            // UI 必须跟随真实协商结果，否则按钮显示假 4:3、画面实为 1080p
+                            // （用户反馈"点击都是 1080p"的根因）。
+                            currentModeW = actual.width
+                            currentModeH = actual.height
+                        }
+                        val requested = pendingModeW > 0 && pendingModeH > 0
+                        val text = if (actual != null && requested &&
+                            (actual.width != pendingModeW || actual.height != pendingModeH)
+                        ) {
+                            // 协商失败回退：明确提示，不让用户误以为切换成功
+                            getString(
+                                R.string.status_mode_fallback,
+                                "$pendingModeW×$pendingModeH",
+                                "${actual.width}×${actual.height}"
+                            )
                         } else {
-                            getString(R.string.status_opened, "$currentModeW×$currentModeH")
+                            val w = actual?.width ?: currentModeW
+                            val h = actual?.height ?: currentModeH
+                            getString(R.string.status_opened, "$w×$h")
+                        }
+                        pendingModeW = 0
+                        pendingModeH = 0
+                        // 按钮文案跟随实际协商尺寸（失败回退时如实显示 1080p 而非假 4:3）；
+                        // USB attach 可能在 bindViews 前触发 OPENED，需防 lateinit 未初始化
+                        if (::btnMode.isInitialized) {
+                            updateModeButton()
                         }
                         // M1: no statusText view (M2 key bar hosts the persistent status);
                         // the opened state is surfaced as a toast
@@ -393,6 +426,10 @@ class MainActivity : CameraActivity() {
                         // No statusText in M1; nothing to render on close
                     }
                     ICameraStateCallBack.State.ERROR -> {
+                        // 切换失败/相机异常：清掉进行中的切换请求，避免残留 pending
+                        // 在后续 OPENED 中误报"回退"
+                        pendingModeW = 0
+                        pendingModeH = 0
                         val errorMsg = getString(R.string.status_error, msg ?: "unknown")
                         // Capture-card errors (permission denied / open failure, etc.) are also shown in the error area for easy diagnosis
                         showError(errorMsg)
@@ -427,8 +464,7 @@ class MainActivity : CameraActivity() {
         btnSpeed = findViewById(R.id.btnSpeed)
         btnBt = findViewById(R.id.btnBt)
         btnAutoPair = findViewById(R.id.btnAutoPair)
-        btnMode1080p = findViewById(R.id.btnMode1080p)
-        btnMode4by3 = findViewById(R.id.btnMode4by3)
+        btnMode = findViewById(R.id.btnMode)
         btnCapture = findViewById(R.id.btnCapture)
         btnExit = findViewById(R.id.btnExit)
 
@@ -451,16 +487,21 @@ class MainActivity : CameraActivity() {
             toast(getString(R.string.status_waiting))
             return
         }
-        // AUSBC: internally stopPreview + startPreview, auto-negotiating the closest supported size.
-        // A failed switch is not silent: the exception is caught and shown in the error area;
-        // on failure the mode/text stay unchanged, keeping the UI consistent with the camera's
-        // actual negotiated state (hdmi2mp P3-L1 rollback, verbatim)
+        // AUSBC 3.6.0: updateResolution is asynchronous — it internally closeCamera() and
+        // re-opens the camera 1s later, auto-negotiating the closest supported size; it does
+        // NOT throw on an unsupported size (only logs when the camera is not open / recording).
+        // So the request target is recorded here and the actual negotiated result is read back
+        // in onCameraState(OPENED) via getCurrentPreviewSize(); currentModeW/H are only updated
+        // there, keeping the UI truthful to the real camera state (hdmi2mp P3-L1 rollback,
+        // adapted for AUSBC's async switch).
+        pendingModeW = width
+        pendingModeH = height
         try {
             updateResolution(width, height)
-            currentModeW = width
-            currentModeH = height
-            toast(getString(R.string.status_opened, "$width×$height"))
         } catch (e: Exception) {
+            // Defensive: AUSBC does not normally throw here, but surface any failure loudly
+            pendingModeW = 0
+            pendingModeH = 0
             val msg = getString(R.string.status_error, e.message ?: e.javaClass.simpleName)
             showError(msg)
             toast(msg)
@@ -635,22 +676,16 @@ class MainActivity : CameraActivity() {
             }
         }
 
-        // --- 分辨率：1080p / 4:3 两个独立按钮直接点选（switchMode 复用现有；
-        //     失败回滚时 currentModeW/H 不变 → updateModeButtons 高亮不变）---
-        updateModeButtons()
-        btnMode1080p.setOnClickListener {
+        // --- 分辨率：1080p ↔ 4:3（switchMode 复用现有；失败回滚时 currentModeW/H 不变 → 文案不变）---
+        updateModeButton()
+        btnMode.setOnClickListener {
             keyBarController.resetAutoHideTimer()
-            if (currentModeW != MODE_1080P_W || currentModeH != MODE_1080P_H) {
+            if (currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H) {
                 switchMode(MODE_1080P_W, MODE_1080P_H)
-            }
-            updateModeButtons()
-        }
-        btnMode4by3.setOnClickListener {
-            keyBarController.resetAutoHideTimer()
-            if (currentModeW != MODE_4BY3_W || currentModeH != MODE_4BY3_H) {
+            } else {
                 switchMode(MODE_4BY3_W, MODE_4BY3_H)
             }
-            updateModeButtons()
+            updateModeButton()
         }
 
         // --- 截图 📷（hdmi2mp captureJpg 原样复用）---
@@ -674,13 +709,15 @@ class MainActivity : CameraActivity() {
     }
 
     /**
-     * 分辨率按钮选中态：跟随 currentModeW/H（switchMode 失败回滚时不变）。
-     * 当前模式按钮置 selected → bg_btn 加深背景高亮，另一按钮常规样式。
+     * 分辨率按钮文案：跟随 currentModeW/H（= 相机实际协商尺寸，OPENED 回调回读）。
+     * 命中预设档位显示档位名；协商回退到其他尺寸（如 1600×1200）时如实显示实际分辨率。
      */
-    private fun updateModeButtons() {
-        val is4by3 = currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H
-        btnMode1080p.isSelected = !is4by3
-        btnMode4by3.isSelected = is4by3
+    private fun updateModeButton() {
+        btnMode.text = when {
+            currentModeW == MODE_4BY3_W && currentModeH == MODE_4BY3_H -> "4:3"
+            currentModeW == MODE_1080P_W && currentModeH == MODE_1080P_H -> "1080p"
+            else -> "$currentModeW×$currentModeH"
+        }
     }
 
     /**

@@ -6,6 +6,7 @@
     <string name="status_waiting">Waiting for USB capture card…</string>
     <string name="status_opened">Connected: %1$s</string>
     <string name="status_error">Error: %1$s</string>
+    <string name="status_mode_fallback">Switch to %1$s failed: unsupported resolution, using %2$s</string>
     <string name="capture_saved">Screenshot saved: %1$s</string>
     <string name="capture_failed">Screenshot failed: %1$s</string>
     <string name="storage_permission_denied">Storage permission not granted. The screenshot was saved to the app\'s private directory but could not be imported into the system gallery</string>
