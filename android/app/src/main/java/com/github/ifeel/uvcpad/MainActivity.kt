@@ -223,15 +223,19 @@ class MainActivity : CameraActivity() {
         // Register the active Activity reference for the global crash self-capture (lets CrashHandler show the full-screen crash dialog)
         CrashHandler.setActiveActivity(this)
         prefs = UvcpadPrefs(this)
-        // [uvcpad-default-4by3-mem] 恢复上次分辨率选择：savedInstanceState（旋转等配置变更 /
-        // 进程重建，值最新）优先，否则取 SharedPreferences 记忆值；首次启动无记忆 =
-        // 默认 4:3 1872×1404（UvcpadPrefs.DEFAULT_RESOLUTION_W/H）。
+        // [uvcpad-resolution-mode] 启动恢复：从 prefs.resolutionMode（用户选择的模式枚举）
+        // 推导预设请求尺寸（4:3 → 1872×1404，16:9 → 1920×1080）。记忆的是用户选择而非
+        // 硬件回退结果——换硬件后记忆不变，下次启动仍按用户模式请求预设。
+        // savedInstanceState（旋转等配置变更）保存的是当前显示的实际协商尺寸，优先恢复
+        // 保证旋转后显示连续；进程级重启 savedInstanceState 为 null → 走模式预设。
+        val modePresetW = if (prefs.resolutionMode == UvcpadPrefs.MODE_16_9) MODE_1080P_W else MODE_4BY3_W
+        val modePresetH = if (prefs.resolutionMode == UvcpadPrefs.MODE_16_9) MODE_1080P_H else MODE_4BY3_H
         if (savedInstanceState != null) {
-            currentModeW = savedInstanceState.getInt(KEY_MODE_W, prefs.resolutionW)
-            currentModeH = savedInstanceState.getInt(KEY_MODE_H, prefs.resolutionH)
+            currentModeW = savedInstanceState.getInt(KEY_MODE_W, modePresetW)
+            currentModeH = savedInstanceState.getInt(KEY_MODE_H, modePresetH)
         } else {
-            currentModeW = prefs.resolutionW
-            currentModeH = prefs.resolutionH
+            currentModeW = modePresetW
+            currentModeH = modePresetH
         }
         // 初始请求与 switchMode 共用同一套异步回读逻辑（v0.2.3）：把请求目标记为 pending，
         // OPENED 回读实际协商尺寸——首次 4:3 请求若 EDID 不支持而回退，同样如实显示并提示。
@@ -415,11 +419,12 @@ class MainActivity : CameraActivity() {
                             // （如 4:3 档 1872×1404 在无此分辨率的设备上回退 1920×1080），
                             // UI 必须跟随真实协商结果，否则按钮显示假 4:3、画面实为 1080p
                             // （用户反馈"点击都是 1080p"的根因）。
+                            // [uvcpad-resolution-mode] 显示跟随实际：currentModeW/H 更新为
+                            // 实际协商值（含回退值，按钮按比例归类、截图文件名用实际值）；
+                            // 但不再回写记忆——记忆只记录用户选择的模式（switchMode 时写入），
+                            // 硬件回退不改变记忆，换硬件后下次启动仍按用户模式请求预设。
                             currentModeW = actual.width
                             currentModeH = actual.height
-                            // [uvcpad-default-4by3-mem] 记忆上次选择：以实际协商结果为准写入
-                            // （协商回退的尺寸也如实记忆），下次启动直接请求该尺寸。
-                            prefs.saveResolution(currentModeW, currentModeH)
                         }
                         val requested = pendingModeW > 0 && pendingModeH > 0
                         // [uvcpad-ratio-toggle] 请求 vs 实际协商日志：真机抓 logcat 确认 16:9
@@ -531,14 +536,18 @@ class MainActivity : CameraActivity() {
      * 按钮文案立即跟随（调用方随后 updateModeButton()）；未插卡时不再拒绝设置——
      * 只记忆不触发 updateResolution（相机未开，无意义），轻提示插卡后生效；
      * 插卡后 getCameraRequest() 按最新记忆值请求（AUSBC 重开/拔插走同一路径，自然满足）。
-     * 已插卡路径保持原行为：pending → updateResolution → OPENED 回读实际协商尺寸 →
-     * saveResolution 同步记忆（回退尺寸也如实记忆，覆盖本次预写值）。
+     * 已插卡路径保持原行为：pending → updateResolution → OPENED 回读实际协商尺寸。
+     *
+     * [uvcpad-resolution-mode] 记忆语义变更：prefs 写的是**用户选择的模式**（mode 参数，
+     * MODE_4_3 / MODE_16_9），不再写实际协商回退值（OPENED 回读的 currentModeW/H 只用于
+     * 显示与按钮归类）。因此硬件回退不会污染记忆——换硬件后下次启动仍按用户模式请求预设。
      */
-    private fun switchMode(width: Int, height: Int) {
-        // 设置总是可变更：先更新记忆（currentModeW/H + prefs），插卡生效依赖 getCameraRequest()
+    private fun switchMode(width: Int, height: Int, mode: Int) {
+        // 设置总是可变更：先更新当前请求尺寸 + 记忆用户选择的模式（resolutionMode），
+        // 插卡生效依赖 getCameraRequest()
         currentModeW = width
         currentModeH = height
-        prefs.saveResolution(width, height)
+        prefs.resolutionMode = mode
         if (isCameraOpened()) {
             // AUSBC 3.6.0: updateResolution is asynchronous — it internally closeCamera() and
             // re-opens the camera 1s later, auto-negotiating the closest supported size; it does
@@ -738,13 +747,15 @@ class MainActivity : CameraActivity() {
         // 真机 1920×1080 协商失败回退 1600×1200（4:3 比例、非预设值）后，旧代码精确相等判断
         // 失效 → else 分支永远切 4:3 → 16:9 分支进不去。按比例后：1600×1200 视为 4:3 档，
         // 点击 → 切 16:9 预设（1920×1080）；若硬件仍不支持则 OPENED 回读回退尺寸并 toast 提示。
+        // [uvcpad-resolution-mode] 切换时把**用户选择的模式**写入 prefs.resolutionMode
+        // （0=4:3 / 1=16:9）；OPENED 回读的硬件回退值不写记忆。
         updateModeButton()
         btnMode.setOnClickListener {
             keyBarController.resetAutoHideTimer()
             if (isSixteenNine(currentModeW, currentModeH)) {
-                switchMode(MODE_4BY3_W, MODE_4BY3_H)
+                switchMode(MODE_4BY3_W, MODE_4BY3_H, UvcpadPrefs.MODE_4_3)
             } else {
-                switchMode(MODE_1080P_W, MODE_1080P_H)
+                switchMode(MODE_1080P_W, MODE_1080P_H, UvcpadPrefs.MODE_16_9)
             }
             updateModeButton()
         }
