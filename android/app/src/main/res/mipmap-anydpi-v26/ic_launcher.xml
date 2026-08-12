@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- uvcpad adaptive launcher icon (tablet theme, M2).
-     minSdk 28 ≥ API 26 → adaptive icons are supported on every device, no PNG density
-     fallbacks needed. Foreground = tablet silhouette, background = deep blue. -->
+<!-- uvcpad adaptive launcher icon (user-provided artwork).
+     Background = solid deep blue #141C4E sampled from the source PNG.
+     Foreground = dual-screen / picture-in-picture graphic (cyan->purple gradient
+     frame + purple PiP block + small bar) chroma-keyed out of the source PNG's dark
+     blue background, scaled so all content sits inside the 66dp safe circle
+     (drawable-nodpi/ic_launcher_foreground.png, 1080x1080). -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />

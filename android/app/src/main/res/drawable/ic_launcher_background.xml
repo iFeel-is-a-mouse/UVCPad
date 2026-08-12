@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- uvcpad launcher background (tablet theme, M2): solid deep blue — clean, modern,
-     matches the "transparent touchpad over a capture feed" positioning. Simple solid
-     block, no gradients (vector simplicity rule). -->
+<!-- uvcpad launcher background: solid deep blue sampled from the user-provided icon
+     artwork (#141C4E = mean of background pixels; source art's bg is a near-uniform
+     dark blue with a subtle vertical gradient, solid approximation is imperceptible). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#0D47A1"
+        android:fillColor="#141C4E"
         android:pathData="M0,0h108v108h-108z" />
 </vector>
