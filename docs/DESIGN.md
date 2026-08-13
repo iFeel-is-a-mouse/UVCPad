@@ -1,7 +1,7 @@
 # uvcpad 技术设计（M1 骨架整合）
 
 > 文档性质：M1 技术设计，基于两个存量项目真实源码（hdmi2mp / KeysJoy）的整合设计。
-> 状态：✅ **M1 已完成**（含触控区域=显示区域需求落地），编码+构建通过，待真机联调；✅ **M2 交互入口已实现（v0.2.x 迭代中）**；✅ **v0.2.9 质量修复批次已完成**（2026-08-13，状态机评审 P1/P2 + housekeeping + SecurityException 兜底 + 重试收尾，96e6b58/21e6640/ff9abf4/bf122c4，见 docs/todo.md）。
+> 状态：✅ **M1 已完成**（含触控区域=显示区域需求落地），编码+构建通过，待真机联调；✅ **M2 交互入口已实现（v0.2.x 迭代中）**；✅ **v0.2.9 质量修复批次已完成**（2026-08-13，状态机评审 P1/P2 + housekeeping + SecurityException 兜底 + 重试收尾，96e6b58/21e6640/ff9abf4/bf122c4，见 docs/todo.md）；✅ **v0.2.10 三维复核修复批次已完成**（2026-08-13，死设备空转/重试按钮失效/切换重试覆盖 3 个 P2 + 9 个 P3，见 §3.7.1）。
 > 关联文档：`docs/PROPOSAL.md`（需求理解，Q2/Q3 已确认：纯触控板、横屏唯一形态）；`docs/todo.md`（M2 待办清单）；`docs/journey.md`（开发历程）。
 
 ---
@@ -384,6 +384,23 @@ App 启动（USB attach 或 Launcher）
 - 蓝牙断开瞬间触摸层必须**先卸载监听再置空 sender**，避免 `sendReport` 到失效连接（KeysJoy 在 getDisconnector 回调里 `setOnTouchListener(null)` + 置空，照抄）。
 - `BluetoothController.onAppStatusChanged` 未注册自动重注册逻辑保留（KeysJoy 原样）。
 - 截图 `captureImage` 可能抛异常：hdmi2mp 已全 try-catch + 失败提示，原样保留。
+
+### 3.7.1 状态机卡死点修复（v0.2.9 状态机评审 + v0.2.10 三维复核，2026-08-13）
+
+状态机评审发现的 4 个卡死点及修复（v0.2.9 落地 96e6b58/bf122c4；v0.2.10 三维复核补强，本轮）：
+
+| 编号 | 卡死场景 | 修复 | 补强（v0.2.10） |
+|---|---|---|---|
+| S1 | registerApp 失败后无恢复路径（只能切后台/重启） | `onServiceConnected` 注册失败 → 3s 后自动重试一次（`registerRetryRunnable` 存字段可取消）；仍失败 → `btHid=null` + 提示 "tap BT to retry" | **P2-1**：btnBt 点击在 `btHid==null`（服务未连/注册失败态）时重新走 init 链（`initBluetooth`），提示不再口惠而实不至 |
+| S7 | 蓝牙服务/代理不可用（btHid=null）时 5s 重连循环无限空转 | `startAutoReconnect` 循环体检查 `btHid==null` → 终止循环 | **P2-2**：`resolveAutoConnectTarget` 校验记忆地址仍在 `bondedDevices` 才返回；已解绑/重新配对 → 清空记忆（内存 + prefs）回退 `mpluggedDevice`，死设备不再被 5s 无限重连 |
+| C1 | 忽略 USB 授权弹窗后提示标记永不重置 | `usbHintActive` 30s 超时重置（`usbHintHandler`），下次 attach intent 再次提示；授权成功/相机 OPENED/onDestroy 时取消重置任务 | —（v0.2.9 已完整） |
+| S8 | 切换设备 connect 失败后无重试，autoPair off 时卡死 | `tryConnectWithRetry`：失败 3s 后单次重试 | **P2-3**：重试 Runnable/Handler 存字段，`switchTo` 开头 `removeCallbacksAndMessages` 取消旧重试——3s 内再切设备不被旧重试覆盖 |
+
+其他本轮补强（三维复核 P3）：
+- **P3-6** `initInProgress`（getProfileProxy 去重标记）理论挂起兜底：3s 无回调强制复位（`initTimeoutHandler`），防永久短路后续 init；正常回调路径（onServiceConnected/onServiceDisconnected/异常）显式取消定时任务。
+- **P3-5** `targetSwitchDevice` 残留：`onStop` 后台化时清空，防旋转/重建/回前台后对旧设备发起连接。
+- **P3-3** 拔卡无提示：`onCameraState(CLOSED)` 且无进行中分辨率切换请求（pending 已清空）→ errorText 提示"采集卡已断开"（AUSBC State 枚举无 DISCONNECTED，CLOSED 即唯一挂断信号；切换分辨率路径的 CLOSED 是正常中间态，不误报）。
+- **P3-2** 高频日志 Log.i → Log.d（状态/连接状态/自动重连循环等），TAG 统一（BluetoothController/MainActivity 各自常量，无需合并）。
 
 ---
 

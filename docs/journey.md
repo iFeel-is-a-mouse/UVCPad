@@ -160,3 +160,13 @@
 - **bf122c4（p2 重试收尾）**：registerApp 3s 重试 Runnable 存字段可取消；onServiceDisconnected 复位 registerAppRetried + 取消 pending 重试——防旧 proxy 的残留重试误伤重连后的新 proxy。
 - **状态**：全部已提交，回填完成（journey/todo 同步）。
 
+
+### v0.2.10 三维复核修复批次（✅ 已完成 2026-08-13）
+
+- **三维复核（auditor：一致性/完整性/健壮性）**结论"需修补"：3 个 P2（同源系统性缺陷）+ 9 个 P3。v0.2.9 引入的 manualDisconnectFlag/initInProgress/registerRetryRunnable/tryConnectWithRetry 等机制残留缺陷本轮修复。
+- **P2-2 死设备空转**：换设备/重新配对后 prefs 记忆的旧地址仍被 5s 无限重连、永不回退默认设备。`resolveAutoConnectTarget()` 增加 bondedDevices 校验：记忆地址不在已配对列表 → 清空记忆（内存 + 经 `lastDeviceAddressRemovedListener` 清 prefs）回退 mpluggedDevice；无权限读取时保守返回记忆地址。
+- **P2-1 重试提示不可执行**：registerApp 失败提示 "tap BT to retry" 但 btnBt 点击只做连接/断开。btnBt 点击分支补 `btHid==null` → 清 manualDisconnectFlag + `initBluetooth()` 重新走 init 链。
+- **P2-3 切换重试覆盖**：switchTo 后 3s 内再切另一设备 → 旧 Runnable 3s 后连回旧设备。`tryConnectWithRetry` 的 Runnable/Handler 存字段，`switchTo` 开头 `removeCallbacksAndMessages` 作废旧重试。
+- **P3**：① btHid!! 竞态改安全解包（唯一一处 line 371）；② 高频 Log.i → Log.d（updateStatus/连接状态/自动重连循环/onAppStatusChanged 等 10 处），TAG 核对一致；③ 拔卡提示：onCameraState CLOSED 且 pending==0 → errorText "Capture card disconnected"（AUSBC 无 DISCONNECTED 枚举，CLOSED 即挂断信号；分辨率切换中间态不误报）；④ showDeviceSwitcher 改 bondedDevices 优先（pairedDevices 可能含已解绑设备，解绑后永不清理）；⑤ onStop 清 targetSwitchDevice（防旋转/重建残留）；⑥ initInProgress 3s 超时复位（getProfileProxy 理论挂起兜底）；⑦ manualDisconnectFlag 清除入口核对——btnBt 连接/switchTo/autoPair 重开/onAppStatusChanged/连接成功均已清，P2-1 补齐 btHid==null 点击入口；⑧ btnBt 断开后立即 updateBtButton（核对：v0.2.9 已实现，无改动）；⑨ DESIGN.md §3.7.1 补 4 卡死点修复说明。
+- **版本**：versionCode 2→3，versionName 0.2.9→0.2.10。
+- **状态**：构建 assembleRelease 通过，已提交（commit shas 见 git log）。
