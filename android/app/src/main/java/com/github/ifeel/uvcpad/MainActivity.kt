@@ -295,12 +295,15 @@ class MainActivity : CameraActivity() {
      * wiring. Guarded by permissions + adapter state (the serial permission flow may still
      * be showing dialogs; onResume re-init covers the late path). Shared by the permission
      * chain tail (P2 fix) so the first-launch grant re-runs exactly the same init.
+     *
+     * @return true if the init chain was actually requested (both guards passed);
+     * false if skipped early (permission missing / BT disabled). [uvcpad-l1]
      */
-    private fun initBluetooth() {
-        if (!checkBluetoothPermissions()) return
+    private fun initBluetooth(): Boolean {
+        if (!checkBluetoothPermissions()) return false
         if (BluetoothAdapter.getDefaultAdapter()?.isEnabled != true) {
             toast(getString(R.string.bt_disabled_hint))
-            return
+            return false
         }
         BluetoothController.init(this)
         // Register sender callback — fires immediately if already connected,
@@ -312,6 +315,7 @@ class MainActivity : CameraActivity() {
         BluetoothController.getDisconnector {
             runOnUiThread { teardownTouchLayer() }
         }
+        return true
     }
 
     override fun onResume() {
@@ -735,8 +739,11 @@ class MainActivity : CameraActivity() {
                 // 提示后唯一恢复手段是切后台/重启（P2-1）
                 if (BluetoothController.btHid == null) {
                     BluetoothController.manualDisconnectFlag = false
-                    initBluetooth()
-                    toast(getString(R.string.keybar_bt_connecting))
+                    // [uvcpad-l1] 只有 init 实际发起（权限+适配器守卫通过）才提示"连接中"，
+                    // 否则（BT 未启用/无权限提前 return）toast 会误导用户以为在连接
+                    if (initBluetooth()) {
+                        toast(getString(R.string.keybar_bt_connecting))
+                    }
                     return@setOnClickListener
                 }
                 // Disconnected → try connect to the previously paired device
