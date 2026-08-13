@@ -17,11 +17,11 @@ open class RelativeMouseSender(
 ) {
     val mouseReport = ScrollableTrackpadMouseReport()
 
-    /** [uvcpad-fix-p3] 复用单 Handler 代替每次 new Timer().schedule()（sendRightClick 释放按键） */
+    /** [uvcpad-fix-p3] Reuse a single Handler instead of a new Timer().schedule() per click (sendRightClick releases the button) */
     private val clickHandler = Handler(Looper.getMainLooper())
 
     protected open fun sendMouse() {
-        // [uvcpad-fix-p2] S+ BLUETOOTH_CONNECT 被撤销时静默丢弃，避免 sendReport SecurityException 崩溃
+        // [uvcpad-fix-p2] Silently drop when the S+ BLUETOOTH_CONNECT permission is revoked, avoiding a sendReport SecurityException crash
         if (!BluetoothController.hasConnectPermission()) return
         try {
             if (!hidDevice.sendReport(host, ScrollableTrackpadMouseReport.ID, mouseReport.bytes)) {
@@ -67,7 +67,7 @@ open class RelativeMouseSender(
         mouseReport.reset()
         mouseReport.rightButton = true
         sendMouse()
-        // [uvcpad-fix-p3] 复用 clickHandler 替代每次新建 Timer 线程（每击省一个线程）
+        // [uvcpad-fix-p3] Reuse clickHandler instead of creating a new Timer thread per click (saves one thread per click)
         clickHandler.postDelayed({
             mouseReport.dxLsb = 0
             mouseReport.dxMsb = 0
@@ -114,7 +114,7 @@ open class RelativeMouseSender(
     }
 
     fun sendScroll(vscroll: Int, hscroll: Int) {
-        // [uvcpad-fix-p3] 每帧 4 条 Log.i 已删除（高频噪声）；无死代码/注释块
+        // [uvcpad-fix-p3] Per-frame 4 Log.i calls removed (high-frequency noise); no dead code/comment blocks
         mouseReport.vScroll = vscroll.toByte()
         mouseReport.hScroll = hscroll.toByte()
         sendMouse()

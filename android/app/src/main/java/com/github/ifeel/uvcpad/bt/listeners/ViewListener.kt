@@ -360,7 +360,7 @@ class ViewListener(
                 wakeRunnables.clear()
                 for (i in 0 until 4) {
                     val runnable = Runnable {
-                        // [uvcpad-fix-p2] S+ 权限被撤销时 sendReport 抛 SecurityException：静默丢弃唤醒串
+                        // [uvcpad-fix-p2] sendReport throws SecurityException when the S+ permission is revoked: silently drop the wake burst
                         try {
                             rMouseSender.mouseReport.reset()
                             hidDevice.sendReport(host, 4, rMouseSender.mouseReport.bytes)
@@ -539,7 +539,7 @@ class ViewListener(
             if (scrollDelta != 0) {
                 rMouseSender.sendScroll(scrollDelta, 0)
             }
-            // [uvcpad-fix-p3] 每帧 Log.d("Scale...") 已删除（捏合期间高频噪声）
+            // [uvcpad-fix-p3] Per-frame Log.d("Scale...") removed (high-frequency noise during pinch)
             return true
         }
 

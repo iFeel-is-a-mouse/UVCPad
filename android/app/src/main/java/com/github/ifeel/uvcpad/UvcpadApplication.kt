@@ -8,7 +8,7 @@ import android.app.Application
  * Registered in Application rather than MainActivity.onCreate because crashes that happen
  * before the Activity is created (e.g. Application/resource initialization, early UVC open
  * flow) must also be captured — the earlier the registration, the wider the crash coverage.
- * (改造自 hdmi2mp Hdmi2mpApplication：仅类名/包名改动，DESIGN §4.1)
+ * (Adapted from hdmi2mp Hdmi2mpApplication: only class name/package name changed, DESIGN §4.1)
  */
 class UvcpadApplication : Application() {
 

@@ -11,35 +11,35 @@ import android.view.MotionEvent
 import android.view.View
 
 /**
- * 下拉三角（DESIGN §3.3 新建）：顶部居中的唯一常驻 UI。
+ * Drop triangle (new in DESIGN §3.3): the only always-visible UI, top-center.
  *
- * 事件豁免（M2 验收关键项）：ACTION_DOWN 消费（返回 true）→ 事件流归三角所有，
- * 不穿透进触控手势层 → 点三角不会误触成 tap→左键、不产生任何鼠标报告。
- * ACTION_MOVE 滑出热区（本 View bounds）标记取消；ACTION_UP 在热区内 → [onToggle]()。
+ * Event exemption (M2 acceptance key): ACTION_DOWN is consumed (returns true) → the event stream belongs to the triangle,
+ * does not penetrate into the touch gesture layer → tapping the triangle cannot be misinterpreted as a tap→left-click and produces no mouse reports.
+ * ACTION_MOVE outside the hot zone (this View's bounds) marks the gesture cancelled; ACTION_UP inside the hot zone → [onToggle]().
  *
- * 视觉：小三角（实心黑填充 + 白色描边，墨水屏高对比方案），
- * 在浅色 PC 画面与深色墨水屏上都清晰可见；
- * 热区 = 本 View bounds（布局 48dp×48dp，≥ 设计下限，DESIGN §6.3）。
+ * Visual: small triangle (solid black fill + white stroke, high-contrast e-ink scheme),
+ * clearly visible on both light PC frames and dark e-ink screens;
+ * hot zone = this View's bounds (48dp×48dp in the layout, ≥ design minimum, DESIGN §6.3).
  */
 class DropTriangleView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    /** 热区内抬起回调：MainActivity 用它 toggle 按键栏显隐（DESIGN §3.3） */
+    /** Lift callback inside the hot zone: MainActivity uses it to toggle the key bar (DESIGN §3.3) */
     var onToggle: (() -> Unit)? = null
 
-    /** ACTION_MOVE 滑出热区后置 true：ACTION_UP 不再触发 toggle */
+    /** Set to true once ACTION_MOVE leaves the hot zone: ACTION_UP no longer triggers toggle */
     private var cancelled = false
 
     private val trianglePath = Path()
 
-    /** 实心黑填充：e-ink 16 级灰阶下纯黑对比度最高，最易辨识 */
+    /** Solid black fill: pure black has the highest contrast at e-ink 16-level grayscale and is the easiest to discern */
     private val triangleFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
     }
 
-    /** 白色描边：在浅色 PC 画面上勾勒轮廓（阴影在墨水屏驱动上不渲染，故用描边替代） */
+    /** White stroke: outlines the shape on light PC frames (shadows are not rendered by the e-ink driver, so a stroke is used instead) */
     private val triangleStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
@@ -48,7 +48,7 @@ class DropTriangleView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // 三角：11dp 宽 × 5dp 高（原 32×16 的约 1/3，用户反馈过大），顶部居中，指向下方（下拉指示）
+        // Triangle: 11dp wide × 5dp tall (about 1/3 of the original 32×16, user reported it as too big), top-center, pointing down (drop-down indicator)
         val tw = dp(11f)
         val th = dp(5f)
         val cx = w / 2f
@@ -62,7 +62,7 @@ class DropTriangleView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        // 先描边后填充：白边保留在实心黑三角外侧，明/暗背景均清晰
+        // Stroke first, then fill: the white edge stays outside the solid black triangle, clear on both light and dark backgrounds
         canvas.drawPath(trianglePath, triangleStrokePaint)
         canvas.drawPath(trianglePath, triangleFillPaint)
     }
@@ -71,10 +71,10 @@ class DropTriangleView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 cancelled = false
-                return true // 消费：事件流归三角，不穿透触控层
+                return true // Consume: the event stream belongs to the triangle, does not penetrate the touch layer
             }
             MotionEvent.ACTION_MOVE -> {
-                // 事件归属由 ACTION_DOWN 决定：滑出热区后 MOVE 仍派发到本层，标记取消
+                // Event ownership is decided by ACTION_DOWN: after leaving the hot zone, MOVE still dispatches to this layer; mark cancelled
                 if (!isInsideHotZone(event.x, event.y)) cancelled = true
                 return true
             }
@@ -92,7 +92,7 @@ class DropTriangleView @JvmOverloads constructor(
         return true
     }
 
-    /** 热区 = 本 View bounds（48dp×48dp） */
+    /** Hot zone = this View's bounds (48dp×48dp) */
     private fun isInsideHotZone(x: Float, y: Float): Boolean =
         x in 0f..width.toFloat() && y in 0f..height.toFloat()
 

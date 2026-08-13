@@ -74,7 +74,7 @@ import java.util.Locale
  *    events so they never produce mouse reports (M2 acceptance key).
  *
  * M1 adaptations vs hdmi2mp MainActivity (all documented in journey.md):
- * - 改造点① toolbar buttons removed (btnMode1080p/btnMode4by3/btnCapture/btnExit/topOverlay
+ * - adaptation ① toolbar buttons removed (btnMode1080p/btnMode4by3/btnCapture/btnExit/topOverlay
  *   and its auto-hide timer): M1 has no clickable UI on the touchpad (M2 re-introduces the
  *   key bar behind the drop triangle); switchMode lost its button/highlight params for the
  *   same reason (M2 key-bar buttons will call the parameterless switchMode),
@@ -96,20 +96,20 @@ class MainActivity : CameraActivity() {
         // State save keys (keep the selected resolution mode across config changes / process recreation)
         private const val KEY_MODE_W = "key_mode_w"
         private const val KEY_MODE_H = "key_mode_h"
-        // [uvcpad-toast-singleton] Toast 全局单例：新消息先 cancel 旧消息再显示 → 最新优先、不排队堆积
+        // [uvcpad-toast-singleton] Global Toast singleton: cancel the old message before showing a new one → latest wins, no queue buildup
         private var sToast: Toast? = null
     }
 
-    // [uvcpad-default-4by3-mem] 默认初始 4:3（1872×1404）。onCreate 会用 SharedPreferences
-    // 记忆值覆盖（首次启动无记忆 = 保持 4:3 默认；记忆了上次选择则恢复上次尺寸）。
+    // [uvcpad-default-4by3-mem] Default initial 4:3 (1872×1404). onCreate overrides it with the SharedPreferences
+    // remembered value (first launch with no memory = stays at the 4:3 default; with a remembered choice, the previous size is restored).
     private var currentModeW = MODE_4BY3_W
     private var currentModeH = MODE_4BY3_H
 
     /**
-     * 分辨率切换请求目标（AUSBC 3.6.0 updateResolution 是异步的：closeCamera + 1s 后重开相机，
-     * 内部自动协商最接近支持尺寸；不抛异常）。实际协商结果在 onCameraState(OPENED) 里通过
-     * getCurrentPreviewSize() 回读——用 pending 记录请求目标，供 OPENED 回调判断是否回退。
-     * 0 表示无进行中的切换请求。
+     * Resolution-switch request target (AUSBC 3.6.0 updateResolution is asynchronous: closeCamera + reopens the camera 1s later,
+     * internally auto-negotiating the closest supported size; it does not throw). The actual negotiated result is read back in
+     * onCameraState(OPENED) via getCurrentPreviewSize() — pending records the requested target so the OPENED callback can tell whether a fallback occurred.
+     * 0 means no switch request in progress.
      */
     private var pendingModeW = 0
     private var pendingModeH = 0
@@ -131,8 +131,8 @@ class MainActivity : CameraActivity() {
     private lateinit var btnExit: TextView
 
     /**
-     * [uvcpad-touch-align] 布局同步：每次布局变化（首次布局 / switchMode 分辨率切换 / 旋转重建）
-     * 把触控层收缩到采集画面实际显示矩形（= AspectRatioTextureView 的布局 bounds，DESIGN §3.2）。
+     * [uvcpad-touch-align] Layout sync: on every layout change (first layout / switchMode resolution switch / rotation rebuild)
+     * shrink the touch layer to the actual display rectangle of the capture frame (= AspectRatioTextureView's layout bounds, DESIGN §3.2).
      */
     private val touchAlignLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
         syncTouchLayerBounds()
@@ -143,14 +143,14 @@ class MainActivity : CameraActivity() {
     /** Speed preset applied to the gesture engine at connection time (DESIGN §3.6: level 4 = 1.0f default) */
     private var currentSpeedLevel: SpeedLevel = SpeedLevel.DEFAULT
 
-    /** 当前手势引擎引用：速度按钮实时更新 mouseSpeed/scrollSpeed（DESIGN §3.4）；连接时创建、断开时置空 */
+    /** Current gesture-engine reference: the speed button updates mouseSpeed/scrollSpeed in real time (DESIGN §3.4); created on connect, nulled on disconnect */
     private var viewListener: ViewListener? = null
 
     // Whether the USB permission guidance hint is currently shown: avoids spamming toasts on
     // every attach intent; cleared as soon as the user grants permission (from hdmi2mp verbatim)
     private var usbHintActive = false
 
-    /** [uvcpad-fix-p2] C1：USB 授权提示超时重置定时器（忽略弹窗后 30s 失效，下次 attach 再提示） */
+    /** [uvcpad-fix-p2] C1: USB-permission-hint timeout reset timer (expires 30s after the dialog is ignored, re-prompts on the next attach) */
     private val usbHintHandler = Handler(Looper.getMainLooper())
 
     // Track whether activity was in background (for BT lifecycle re-init, KeysJoy pattern)
@@ -229,11 +229,11 @@ class MainActivity : CameraActivity() {
         // Register the active Activity reference for the global crash self-capture (lets CrashHandler show the full-screen crash dialog)
         CrashHandler.setActiveActivity(this)
         prefs = UvcpadPrefs(this)
-        // [uvcpad-resolution-mode] 启动恢复：从 prefs.resolutionMode（用户选择的模式枚举）
-        // 推导预设请求尺寸（4:3 → 1872×1404，16:9 → 1920×1080）。记忆的是用户选择而非
-        // 硬件回退结果——换硬件后记忆不变，下次启动仍按用户模式请求预设。
-        // savedInstanceState（旋转等配置变更）保存的是当前显示的实际协商尺寸，优先恢复
-        // 保证旋转后显示连续；进程级重启 savedInstanceState 为 null → 走模式预设。
+        // [uvcpad-resolution-mode] Startup restore: derive the preset request size from prefs.resolutionMode (the user-selected mode enum)
+        // (4:3 → 1872×1404, 16:9 → 1920×1080). What is remembered is the user's choice, not the
+        // hardware fallback result — memory stays unchanged after swapping hardware, and the next launch still requests the preset per the user's mode.
+        // savedInstanceState (config changes like rotation) holds the currently displayed actually negotiated size and is restored first
+        // to keep the display continuous after rotation; on process-level restart savedInstanceState is null → go through the mode preset.
         val modePresetW = if (prefs.resolutionMode == UvcpadPrefs.MODE_16_9) MODE_1080P_W else MODE_4BY3_W
         val modePresetH = if (prefs.resolutionMode == UvcpadPrefs.MODE_16_9) MODE_1080P_H else MODE_4BY3_H
         if (savedInstanceState != null) {
@@ -243,27 +243,27 @@ class MainActivity : CameraActivity() {
             currentModeW = modePresetW
             currentModeH = modePresetH
         }
-        // 初始请求与 switchMode 共用同一套异步回读逻辑（v0.2.3）：把请求目标记为 pending，
-        // OPENED 回读实际协商尺寸——首次 4:3 请求若 EDID 不支持而回退，同样如实显示并提示。
+        // The initial request shares the same async read-back logic as switchMode (v0.2.3): record the request target as pending,
+        // then OPENED reads back the actually negotiated size — if the first 4:3 request falls back because EDID does not support it, it is likewise shown truthfully and notified.
         pendingModeW = currentModeW
         pendingModeH = currentModeH
         currentSpeedLevel = SpeedLevel.forLevel(prefs.speedLevel)
         // Auto-pair toggle (KeysJoy pattern): sync flag + start the reconnect loop when enabled
         BluetoothController.autoPairFlag = prefs.autoPair
-        // [uvcpad-fix-p1] 新会话重置手动断开标记（避免上次手动断开残留阻塞本次自动连接）
+        // [uvcpad-fix-p1] New session resets the manual-disconnect marker (prevents a leftover manual disconnect from blocking this session's auto-connect)
         BluetoothController.manualDisconnectFlag = false
         if (prefs.autoPair) {
             BluetoothController.startAutoReconnect()
         }
-        // [uvcpad-last-device] 最近连接设备记忆（多设备自动连接选择）：启动时注入 prefs 记忆值；
-        // 每次连接成功经 lastDeviceConnectedListener 回写 prefs（手动切换成功也计入 →
-        // 下次自动连接优先新设备，符合"最近连接"语义）
+        // [uvcpad-last-device] Most-recent-device memory (multi-device auto-connect selection): inject the prefs remembered value at startup;
+        // every successful connection writes back to prefs via lastDeviceConnectedListener (manual switch success counts too →
+        // the next auto-connect prefers the new device, matching the "most recent connection" semantics)
         BluetoothController.lastDeviceAddress = prefs.lastDeviceAddress
         BluetoothController.lastDeviceConnectedListener = { device ->
             prefs.lastDeviceAddress = device.address
         }
-        // [uvcpad-consistency-p2] 记忆地址失效（已解绑/重新配对，resolveAutoConnectTarget 判定）
-        // 时同步清除 prefs 持久记忆，避免下次启动重新注入死设备地址
+        // [uvcpad-consistency-p2] When the remembered address is invalidated (unbonded/re-paired, decided by resolveAutoConnectTarget),
+        // clear the persisted prefs memory in sync to avoid re-injecting a dead device address on the next launch
         BluetoothController.lastDeviceAddressRemovedListener = {
             prefs.lastDeviceAddress = null
         }
@@ -347,24 +347,24 @@ class MainActivity : CameraActivity() {
     override fun onStop() {
         super.onStop()
         wasInBackground = true
-        // [uvcpad-consistency-p3] 后台化时丢弃进行中的切换意图：旋转/重建/回前台后 targetSwitchDevice
-        // 残留会在 onConnectionStateChanged 分支里对旧设备发起连接（switchTo 后 3s 内切后台场景）
+        // [uvcpad-consistency-p3] Drop the in-flight switch intent when going to background: after rotation/rebuild/return-to-foreground a leftover
+        // targetSwitchDevice would trigger a connect to the old device in the onConnectionStateChanged branch (switchTo then background within 3s scenario)
         BluetoothController.targetSwitchDevice = null
     }
 
     override fun onDestroy() {
         // DESIGN §3.7: stop auto-reconnect + clear the status listener + drop the crash-dialog ref
         BluetoothController.stopAutoReconnect()
-        // [uvcpad-fix-p1] 单例回调清空：deviceListener/disconnectListener/statusListener 一并置空，
-        // 防止单例持有已销毁 Activity 的 lambda 引用泄漏
+        // [uvcpad-fix-p1] Clear all singleton callbacks: deviceListener/disconnectListener/statusListener nulled together,
+        // preventing the singleton from holding lambdas that reference the destroyed Activity (leak)
         BluetoothController.clearListeners()
-        // [uvcpad-last-device] 清理连接成功回调：避免单例持有已销毁 Activity 引用
+        // [uvcpad-last-device] Clear the connection-success callback: avoids the singleton holding a reference to the destroyed Activity
         BluetoothController.lastDeviceConnectedListener = null
-        // [uvcpad-consistency-p2] 清理记忆失效回调（同上，防引用泄漏）
+        // [uvcpad-consistency-p2] Clear the memory-invalidation callback (same reason, prevents reference leaks)
         BluetoothController.lastDeviceAddressRemovedListener = null
-        // [uvcpad-fix-p2] C1：清理 USB 提示超时重置任务
+        // [uvcpad-fix-p2] C1: clear the USB-permission-hint timeout reset task
         usbHintHandler.removeCallbacksAndMessages(null)
-        // M2: 清除按键栏自动隐藏计时器与动画（hdmi2mp: removeCallbacksAndMessages 模式）
+        // M2: clear the key bar auto-hide timer and animations (hdmi2mp: removeCallbacksAndMessages pattern)
         if (::keyBarController.isInitialized) {
             keyBarController.destroy()
         }
@@ -411,8 +411,8 @@ class MainActivity : CameraActivity() {
             // frame rate explicitly (no setFps/setPreviewFps etc.), so 60fps is not requested
             // explicitly; rely on UVC default negotiation: the MS2130 outputs up to
             // 1920×1080@60 (MJPEG) per its device descriptor.
-            // [uvcpad-default-4by3-mem] 请求尺寸跟随 currentModeW/H（onCreate 恢复的记忆值；
-            // 首次启动 = 4:3 1872×1404），不再硬编码 1080p。
+            // [uvcpad-default-4by3-mem] The request size follows currentModeW/H (the remembered value restored in onCreate;
+            // first launch = 4:3 1872×1404), no longer hardcoded to 1080p.
             .setPreviewWidth(currentModeW)
             .setPreviewHeight(currentModeH)
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
@@ -441,20 +441,20 @@ class MainActivity : CameraActivity() {
                     ICameraStateCallBack.State.OPENED -> {
                         val actual = getCurrentPreviewSize()
                         if (actual != null) {
-                            // 以相机实际协商尺寸为准：AUSBC 会回退到最接近支持尺寸
-                            // （如 4:3 档 1872×1404 在无此分辨率的设备上回退 1920×1080），
-                            // UI 必须跟随真实协商结果，否则按钮显示假 4:3、画面实为 1080p
-                            // （用户反馈"点击都是 1080p"的根因）。
-                            // [uvcpad-resolution-mode] 显示跟随实际：currentModeW/H 更新为
-                            // 实际协商值（含回退值，按钮按比例归类、截图文件名用实际值）；
-                            // 但不再回写记忆——记忆只记录用户选择的模式（switchMode 时写入），
-                            // 硬件回退不改变记忆，换硬件后下次启动仍按用户模式请求预设。
+                            // Use the camera's actually negotiated size as truth: AUSBC falls back to the closest supported size
+                            // (e.g. 4:3 bucket 1872×1404 falls back to 1920×1080 on devices without that resolution),
+                            // and the UI must follow the real negotiated result, otherwise the button shows a fake 4:3 while the frame is actually 1080p
+                            // (root cause of the user report "every tap is 1080p").
+                            // [uvcpad-resolution-mode] Display follows the actual: currentModeW/H updated to the
+                            // actually negotiated values (including fallback values; the button is classified by aspect ratio, the screenshot filename uses the actual values);
+                            // but memory is NOT written back — memory only records the user-selected mode (written in switchMode),
+                            // hardware fallback does not change the memory, and after swapping hardware the next launch still requests the preset per the user's mode.
                             currentModeW = actual.width
                             currentModeH = actual.height
                         }
                         val requested = pendingModeW > 0 && pendingModeH > 0
-                        // [uvcpad-ratio-toggle] 请求 vs 实际协商日志：真机抓 logcat 确认 16:9
-                        // 协商失败回退（AUSBC 走 getSuitableSize 最近宽度回退，见调研报告）
+                        // [uvcpad-ratio-toggle] Request-vs-actual negotiation log: grab logcat on a real device to confirm 16:9
+                        // negotiation-failure fallback (AUSBC falls back via getSuitableSize nearest width, see the research report)
                         if (requested && actual != null) {
                             if (actual.width != pendingModeW || actual.height != pendingModeH) {
                                 Log.w(
@@ -472,7 +472,7 @@ class MainActivity : CameraActivity() {
                         val text = if (actual != null && requested &&
                             (actual.width != pendingModeW || actual.height != pendingModeH)
                         ) {
-                            // 协商失败回退：明确提示，不让用户误以为切换成功
+                            // Negotiation-failure fallback: notify explicitly so the user does not think the switch succeeded
                             getString(
                                 R.string.status_mode_fallback,
                                 "$pendingModeW×$pendingModeH",
@@ -485,8 +485,8 @@ class MainActivity : CameraActivity() {
                         }
                         pendingModeW = 0
                         pendingModeH = 0
-                        // 按钮文案跟随实际协商尺寸（失败回退时如实显示 1080p 而非假 4:3）；
-                        // USB attach 可能在 bindViews 前触发 OPENED，需防 lateinit 未初始化
+                        // The button label follows the actually negotiated size (truthfully shows 1080p instead of a fake 4:3 on fallback);
+                        // USB attach may trigger OPENED before bindViews, so guard against uninitialized lateinit
                         if (::btnMode.isInitialized) {
                             updateModeButton()
                         }
@@ -499,17 +499,17 @@ class MainActivity : CameraActivity() {
                         clearError()
                     }
                     ICameraStateCallBack.State.CLOSED -> {
-                        // [uvcpad-consistency-p3] 拔卡提示：CLOSED 且无进行中的分辨率切换请求
-                        // （pending 已清空）= 采集卡拔出/异常关闭 → errorText 提示；分辨率切换路径
-                        // 的 CLOSED 是 closeCamera 的正常中间态（pending 非 0，随后 OPENED 会 clearError），
-                        // 不提示避免误报"已断开"。AUSBC State 枚举无 DISCONNECTED，CLOSED 即唯一挂断信号。
+                        // [uvcpad-consistency-p3] Unplug notification: CLOSED with no resolution-switch request in progress
+                        // (pending cleared) = capture card unplugged/abnormally closed → notify via errorText; the CLOSED on the resolution-switch path
+                        // is the normal intermediate state of closeCamera (pending non-zero, the subsequent OPENED clears the error),
+                        // so no notification to avoid a false "disconnected" report. The AUSBC State enum has no DISCONNECTED; CLOSED is the only hangup signal.
                         if (pendingModeW == 0 && pendingModeH == 0) {
                             showError(getString(R.string.status_capture_card_disconnected))
                         }
                     }
                     ICameraStateCallBack.State.ERROR -> {
-                        // 切换失败/相机异常：清掉进行中的切换请求，避免残留 pending
-                        // 在后续 OPENED 中误报"回退"
+                        // Switch failure/camera exception: clear the in-flight switch request to avoid a leftover pending
+                        // falsely reporting a "fallback" on a later OPENED
                         pendingModeW = 0
                         pendingModeH = 0
                         val errorMsg = getString(R.string.status_error, msg ?: "unknown")
@@ -532,14 +532,14 @@ class MainActivity : CameraActivity() {
         touchLayer = findViewById(R.id.touchLayer)
         rootLayout = findViewById(R.id.rootLayout)
         cameraViewContainer = findViewById(R.id.cameraViewContainer)
-        // [uvcpad-touch-align]：AUSBC 的 AspectRatioTextureView 在 onMeasure 中按视频宽高比
-        // fit-inside 自缩放（getGravity()=CENTER 在容器内居中），其布局 bounds 就是显示区域；
-        // 注册全局布局监听，任何布局变化都触发触控层对齐（首次布局 / 分辨率切换 / 旋转重建）。
-        // 注意：触控层不能放进 cameraViewContainer —— AUSBC initView() 会对容器 removeAllViews()
-        // 清空 XML 子 View（AUSBC 3.6.0 源码确认，DESIGN §3.2）。
+        // [uvcpad-touch-align]: AUSBC's AspectRatioTextureView scales fit-inside in onMeasure according to the video aspect ratio
+        // (getGravity()=CENTER centers it in the container), so its layout bounds ARE the display area;
+        // a global layout listener is registered so any layout change triggers the touch-layer alignment (first layout / resolution switch / rotation rebuild).
+        // Note: the touch layer must NOT go inside cameraViewContainer — AUSBC initView() calls removeAllViews() on the container,
+        // clearing the XML child views (confirmed in AUSBC 3.6.0 source, DESIGN §3.2).
         cameraViewContainer.viewTreeObserver.addOnGlobalLayoutListener(touchAlignLayoutListener)
 
-        // ============ M2: 下拉三角 + 按键栏装配（DESIGN §3.3/§3.4） ============
+        // ============ M2: drop triangle + key bar assembly (DESIGN §3.3/§3.4) ============
         dropTriangle = findViewById(R.id.dropTriangle)
         keyBar = findViewById(R.id.keyBar)
         keyBarController = KeyBarController(keyBar, prefs.autoHideMs)
@@ -550,9 +550,9 @@ class MainActivity : CameraActivity() {
         btnCapture = findViewById(R.id.btnCapture)
         btnExit = findViewById(R.id.btnExit)
 
-        // 三角点击 → 按键栏显隐 toggle（已展开→收起，收起即重置计时，DESIGN §3.3）
+        // Triangle tap → key bar show/hide toggle (expanded→collapse; collapsing also resets the timer, DESIGN §3.3)
         dropTriangle.onToggle = { keyBarController.toggle() }
-        // 任意触摸重置自动隐藏计时（DESIGN §3.4）：按键栏非按钮区域 + 触控层
+        // Any touch resets the auto-hide timer (DESIGN §3.4): key bar non-button areas + touch layer
         keyBar.onAreaTouch = { keyBarController.resetAutoHideTimer() }
         touchLayer.onAnyTouch = { keyBarController.resetAutoHideTimer() }
 
@@ -562,22 +562,22 @@ class MainActivity : CameraActivity() {
     /**
      * Switch the capture resolution preset (kept from hdmi2mp for the M2 key bar).
      * M1 note: the toolbar button/highlight params were dropped together with the toolbar
-     * (改造点①); M2 key-bar buttons will call this directly.
+     * (adaptation ①); M2 key-bar buttons will call this directly.
      *
-     * [uvcpad-prefs-mem2] 分辨率设置与采集卡状态解耦（用户 2026-08-12 拍板）：
-     * 无论是否插卡，点击按钮总是先更新 currentModeW/H + 写入 SharedPreferences（记忆），
-     * 按钮文案立即跟随（调用方随后 updateModeButton()）；未插卡时不再拒绝设置——
-     * 只记忆不触发 updateResolution（相机未开，无意义），轻提示插卡后生效；
-     * 插卡后 getCameraRequest() 按最新记忆值请求（AUSBC 重开/拔插走同一路径，自然满足）。
-     * 已插卡路径保持原行为：pending → updateResolution → OPENED 回读实际协商尺寸。
+     * [uvcpad-prefs-mem2] Resolution setting decoupled from the capture-card state (user decision on 2026-08-12):
+     * whether or not a card is plugged in, tapping the button always first updates currentModeW/H + writes SharedPreferences (memory),
+     * and the button label follows immediately (the caller then calls updateModeButton()); when no card is plugged in, the setting is no longer rejected —
+     * it only remembers and does not trigger updateResolution (meaningless without an open camera), with a light hint that it takes effect once a card is plugged in;
+     * after plugging in, getCameraRequest() requests per the latest remembered values (AUSBC reopen/unplug-replug go through the same path, naturally satisfied).
+     * The plugged-in path keeps the original behavior: pending → updateResolution → OPENED reads back the actually negotiated size.
      *
-     * [uvcpad-resolution-mode] 记忆语义变更：prefs 写的是**用户选择的模式**（mode 参数，
-     * MODE_4_3 / MODE_16_9），不再写实际协商回退值（OPENED 回读的 currentModeW/H 只用于
-     * 显示与按钮归类）。因此硬件回退不会污染记忆——换硬件后下次启动仍按用户模式请求预设。
+     * [uvcpad-resolution-mode] Memory-semantics change: prefs stores the **user-selected mode** (the mode parameter,
+     * MODE_4_3 / MODE_16_9), no longer the actually negotiated fallback values (the OPENED read-back currentModeW/H is only used for
+     * display and button classification). Hence hardware fallback cannot pollute the memory — after swapping hardware, the next launch still requests the preset per the user's mode.
      */
     private fun switchMode(width: Int, height: Int, mode: Int) {
-        // 设置总是可变更：先更新当前请求尺寸 + 记忆用户选择的模式（resolutionMode），
-        // 插卡生效依赖 getCameraRequest()
+        // The setting is always changeable: first update the current request size + remember the user-selected mode (resolutionMode);
+        // taking effect with a plugged-in card depends on getCameraRequest()
         currentModeW = width
         currentModeH = height
         prefs.resolutionMode = mode
@@ -602,7 +602,7 @@ class MainActivity : CameraActivity() {
                 toast(msg)
             }
         } else {
-            // 未插卡：不触发 updateResolution（相机未开，无意义），仅轻提示记忆已生效、插卡后生效
+            // No card plugged in: do not trigger updateResolution (meaningless without an open camera); only lightly hint that the memory took effect and will apply once a card is plugged in
             toast(getString(R.string.status_mode_pending, "$width×$height"))
         }
     }
@@ -672,7 +672,7 @@ class MainActivity : CameraActivity() {
     /**
      * Mount the gesture engine on the transparent touch layer (called on BT connect, main thread).
      * A fresh RelativeMouseSender is created for this connection; the ViewListener applies the
-     * current speed preset (scrollSpeed 走 SpeedLevel 覆盖，level 4 = 1.0f，DESIGN §3.6).
+     * current speed preset (scrollSpeed goes through the SpeedLevel override, level 4 = 1.0f, DESIGN §3.6).
      */
     private fun setupTouchLayer(hidDevice: BluetoothHidDevice, host: BluetoothDevice) {
         val sender = RelativeMouseSender(hidDevice, host)
@@ -682,7 +682,7 @@ class MainActivity : CameraActivity() {
         }
         viewListener = vListener
         touchLayer.setGestureListener(vListener)
-        // M2: 连接后刷新蓝牙按钮文案（设备名/已连接）
+        // M2: refresh the Bluetooth button label after connecting (device name/connected)
         updateBtButton()
     }
 
@@ -694,19 +694,19 @@ class MainActivity : CameraActivity() {
     private fun teardownTouchLayer() {
         viewListener = null
         touchLayer.setGestureListener(null)
-        // M2: 断开后刷新蓝牙按钮文案
+        // M2: refresh the Bluetooth button label after disconnecting
         updateBtButton()
     }
 
     // ============ M2: key bar wiring (DESIGN §3.4) ============
 
     /**
-     * M2 按键栏按钮接线（DESIGN §3.4 表格；按钮集合不含任何键盘设置项，Q2 ✅）。
-     * 每个按钮处理前先重置自动隐藏计时（与 hdmi2mp "每个按钮先 showToolbar()" 同模式：
-     * 点击按钮 = 交互，按键栏保持展开并重新计时）。
+     * M2 key-bar button wiring (DESIGN §3.4 table; the button set contains no keyboard settings items, Q2 ✅).
+     * Every button resets the auto-hide timer before handling (same pattern as hdmi2mp "each button calls showToolbar() first":
+     * tapping a button is an interaction, so the key bar stays expanded and the timer restarts).
      */
     private fun setupKeyBarListeners() {
-        // --- 速度：1️⃣–5️⃣ 循环（KeysJoy SelectDeviceActivity.setupToolbar 逻辑）---
+        // --- Speed: 1️⃣–5️⃣ cycle (KeysJoy SelectDeviceActivity.setupToolbar logic) ---
         btnSpeed.text = currentSpeedLevel.emoji
         btnSpeed.setOnClickListener {
             keyBarController.resetAutoHideTimer()
@@ -721,26 +721,26 @@ class MainActivity : CameraActivity() {
             toast(getString(R.string.keybar_speed, currentSpeedLevel.emoji))
         }
 
-        // --- 蓝牙：点击连接/断开；长按 → 多设备切换 showDeviceSwitcher（KeysJoy 逻辑）---
+        // --- Bluetooth: tap to connect/disconnect; long-press → multi-device switch showDeviceSwitcher (KeysJoy logic) ---
         updateBtButton()
         btnBt.setOnClickListener {
             keyBarController.resetAutoHideTimer()
             val host = BluetoothController.hostDevice
             if (host != null) {
-                // Connected → disconnect（[uvcpad-fix-p1] 置手动断开标记，抑制 DISCONNECTED 后的自动重连）
+                // Connected → disconnect ([uvcpad-fix-p1] sets the manual-disconnect marker to suppress auto-reconnect after DISCONNECTED)
                 BluetoothController.manualDisconnectFlag = true
                 BluetoothController.tryDisconnect(host)
                 BluetoothController.hostDevice = null
                 updateBtButton()
                 toast(getString(R.string.keybar_bt_disconnected))
             } else {
-                // [uvcpad-consistency-p2] 服务未连接/注册失败态（btHid==null）：点击 = 用户重新连接意图，
-                // 重新走 init 链（getProfileProxy → registerApp），而非只 toast——否则"tap BT to retry"
-                // 提示后唯一恢复手段是切后台/重启（P2-1）
+                // [uvcpad-consistency-p2] Service-not-connected / registration-failed state (btHid==null): tapping = user reconnect intent,
+                // re-run the init chain (getProfileProxy → registerApp) instead of only toasting — otherwise after the "tap BT to retry"
+                // hint the only recovery is backgrounding/restarting (P2-1)
                 if (BluetoothController.btHid == null) {
                     BluetoothController.manualDisconnectFlag = false
-                    // [uvcpad-l1] 只有 init 实际发起（权限+适配器守卫通过）才提示"连接中"，
-                    // 否则（BT 未启用/无权限提前 return）toast 会误导用户以为在连接
+                    // [uvcpad-l1] Only when init is actually issued (permission + adapter guards passed) show the "connecting" hint;
+                    // otherwise (BT disabled / no permission, early return) a toast would mislead the user into thinking it is connecting
                     if (initBluetooth()) {
                         toast(getString(R.string.keybar_bt_connecting))
                     }
@@ -751,7 +751,7 @@ class MainActivity : CameraActivity() {
                     if (btConnectionState(device) ==
                         BluetoothProfile.STATE_DISCONNECTED
                     ) {
-                        // [uvcpad-fix-p1] 手动连接意图：清手动断开标记再连
+                        // [uvcpad-fix-p1] Manual connect intent: clear the manual-disconnect marker before connecting
                         BluetoothController.manualDisconnectFlag = false
                         BluetoothController.tryConnect(device)
                         toast(getString(R.string.keybar_bt_connecting))
@@ -765,7 +765,7 @@ class MainActivity : CameraActivity() {
             true
         }
 
-        // --- 自动配对 🔗（KeysJoy setupToolbar 逻辑：autoPairFlag + 重连循环）---
+        // --- Auto-pair 🔗 (KeysJoy setupToolbar logic: autoPairFlag + reconnect loop) ---
         btnAutoPair.text = if (prefs.autoPair) "🔗" else "⛓️‍💥"
         btnAutoPair.setOnClickListener {
             keyBarController.resetAutoHideTimer()
@@ -774,10 +774,10 @@ class MainActivity : CameraActivity() {
             BluetoothController.autoPairFlag = enabled
             btnAutoPair.text = if (enabled) "🔗" else "⛓️‍💥"
             if (enabled) {
-                // [uvcpad-fix-p1] 重新开启自动配对 = 新的自动连接意图 → 清除手动断开标记
+                // [uvcpad-fix-p1] Re-enabling auto-pair is a new auto-connect intent → clear the manual-disconnect marker
                 BluetoothController.manualDisconnectFlag = false
                 BluetoothController.startAutoReconnect()
-                // KeysJoy: 开启自动配对时立即尝试连接已配对设备
+                // KeysJoy: immediately try connecting to the paired device when auto-pair is enabled
                 BluetoothController.mpluggedDevice?.let { device ->
                     if (btConnectionState(device) ==
                         BluetoothProfile.STATE_DISCONNECTED
@@ -792,13 +792,13 @@ class MainActivity : CameraActivity() {
             }
         }
 
-        // --- 分辨率：16:9 ↔ 4:3（switchMode 复用现有；失败回滚时 currentModeW/H 不变 → 文案不变）---
-        // [uvcpad-ratio-toggle] 档位判断改为按宽高比（isSixteenNine），不再精确比较尺寸：
-        // 真机 1920×1080 协商失败回退 1600×1200（4:3 比例、非预设值）后，旧代码精确相等判断
-        // 失效 → else 分支永远切 4:3 → 16:9 分支进不去。按比例后：1600×1200 视为 4:3 档，
-        // 点击 → 切 16:9 预设（1920×1080）；若硬件仍不支持则 OPENED 回读回退尺寸并 toast 提示。
-        // [uvcpad-resolution-mode] 切换时把**用户选择的模式**写入 prefs.resolutionMode
-        // （0=4:3 / 1=16:9）；OPENED 回读的硬件回退值不写记忆。
+        // --- Resolution: 16:9 ↔ 4:3 (reuses switchMode; on failed rollback currentModeW/H stay unchanged → label unchanged) ---
+        // [uvcpad-ratio-toggle] Bucket determination is by aspect ratio (isSixteenNine) instead of exact size comparison:
+        // after a real device negotiates 1920×1080 down to 1600×1200 (4:3 ratio, not a preset value), the old exact-equality check
+        // fails → the else branch always switches to 4:3 → the 16:9 branch is unreachable. By ratio: 1600×1200 counts as the 4:3 bucket,
+        // tap → switch to the 16:9 preset (1920×1080); if the hardware still does not support it, OPENED reads back the fallback size and toasts.
+        // [uvcpad-resolution-mode] The **user-selected mode** is written to prefs.resolutionMode on switch
+        // (0=4:3 / 1=16:9); the hardware fallback value read back on OPENED is not written to memory.
         updateModeButton()
         btnMode.setOnClickListener {
             keyBarController.resetAutoHideTimer()
@@ -810,20 +810,20 @@ class MainActivity : CameraActivity() {
             updateModeButton()
         }
 
-        // --- 截图 📷（hdmi2mp captureJpg 原样复用）---
+        // --- Screenshot 📷 (hdmi2mp captureJpg reused verbatim) ---
         btnCapture.setOnClickListener {
             keyBarController.resetAutoHideTimer()
             captureJpg()
         }
 
-        // --- 退出 ⏻：清理 + finish（onDestroy → AUSBC clear() 释放 UVC）---
+        // --- Exit ⏻: cleanup + finish (onDestroy → AUSBC clear() releases UVC) ---
         btnExit.setOnClickListener {
             keyBarController.destroy()
             finish()
         }
     }
 
-    /** 蓝牙按钮文案：已连接显示设备名，未连接显示默认提示 */
+    /** Bluetooth button label: shows the device name when connected, the default hint when not */
     private fun updateBtButton() {
         val host = BluetoothController.hostDevice
         val name = btDeviceName(host)
@@ -832,25 +832,25 @@ class MainActivity : CameraActivity() {
     }
 
     /**
-     * 16:9 档位判断：按宽高比而非精确尺寸。
-     * [uvcpad-ratio-toggle] 真机反馈：1920×1080 协商失败回退 1600×1200（4:3 比例、非预设值）
-     * 后，旧代码“精确相等”判断失效 → 16:9 分支永远进不去。按比例判断后 1600×1200 归入
-     * 4:3 档，点击即可重新请求 16:9 预设。
-     * 整数交叉相乘比较（W*9 >= H*16）避免 float 误差：1920×1080 / 1280×720 等命中；
-     * 1600×1200 / 1872×1404 / 1024×768（4:3）不满足。
+     * 16:9 bucket determination: by aspect ratio rather than exact size.
+     * [uvcpad-ratio-toggle] Real-device feedback: after 1920×1080 negotiation fails and falls back to 1600×1200 (4:3 ratio, non-preset value),
+     * the old "exact equality" check fails → the 16:9 branch is unreachable. With ratio-based determination, 1600×1200 lands in the
+     * 4:3 bucket and tapping can re-request the 16:9 preset.
+     * Integer cross-multiplication comparison (W*9 >= H*16) avoids float errors: 1920×1080 / 1280×720 etc. match;
+     * 1600×1200 / 1872×1404 / 1024×768 (4:3) do not.
      */
     private fun isSixteenNine(w: Int, h: Int): Boolean =
         w > 0 && h > 0 && w.toLong() * 9 >= h.toLong() * 16
 
-    /** 4:3 宽高比判断（整数交叉相乘）：W*3 == H*4，如 1600×1200、1872×1404、1024×768 */
+    /** 4:3 aspect-ratio check (integer cross-multiplication): W*3 == H*4, e.g. 1600×1200, 1872×1404, 1024×768 */
     private fun isFourThree(w: Int, h: Int): Boolean =
         w > 0 && h > 0 && w.toLong() * 3 == h.toLong() * 4
 
     /**
-     * 分辨率按钮文案：跟随 currentModeW/H（= 相机实际协商尺寸，OPENED 回调回读）。
-     * [uvcpad-ratio-toggle] 按比例归类：16:9 比例显示 "16:9"、4:3 比例显示 "4:3"
-     * （含协商回退的 1600×1200——用户看到 4:3 即知当前处于 4:3 档）；
-     * 罕见其他比例（如 5:4）如实显示实际尺寸。
+     * Resolution button label: follows currentModeW/H (= the camera's actually negotiated size, read back on the OPENED callback).
+     * [uvcpad-ratio-toggle] Classified by aspect ratio: 16:9 ratio shows "16:9", 4:3 ratio shows "4:3"
+     * (including the negotiated fallback 1600×1200 — the user sees 4:3 and knows the current bucket);
+     * rare other ratios (e.g. 5:4) show the actual size truthfully.
      */
     private fun updateModeButton() {
         btnMode.text = when {
@@ -861,15 +861,15 @@ class MainActivity : CameraActivity() {
     }
 
     /**
-     * 多设备切换弹窗（复制 KeysJoy SelectDeviceActivity.showDeviceSwitcher，DESIGN §4.2 提取片段）。
-     * 长按蓝牙按钮唤出：列出已配对设备，点击 → switchTo() 切换；另有 "📡 Make Discoverable" 入口。
+     * Multi-device switch popup (copied from KeysJoy SelectDeviceActivity.showDeviceSwitcher, DESIGN §4.2 extracted snippet).
+     * Invoked by long-pressing the Bluetooth button: lists paired devices; tap → switchTo() switch; plus a "📡 Make Discoverable" entry.
      */
     private fun showDeviceSwitcher() {
         if (!::btnBt.isInitialized) return
         val popup = PopupMenu(this, btnBt, Gravity.START)
-        // [uvcpad-consistency-p3] 已配对列表（bondedDevices）为准，pairedDevices 仅作兜底：
-        // 运行期缓存可能含已解绑设备（解绑后永不清理），以系统当前已配对列表为准可避免弹窗
-        // 出现死设备条目；无权限读取时降级用运行期缓存（[uvcpad-fix-p3] 空列表兜底语义保留）
+        // [uvcpad-consistency-p3] The paired list (bondedDevices) is authoritative, pairedDevices is only a fallback:
+        // the runtime cache may contain unbonded devices (never cleaned after unbonding); using the system's current paired list
+        // avoids dead-device entries in the popup; without permission to read it, degrade to the runtime cache ([uvcpad-fix-p3] empty-list fallback semantics kept)
         val devices = try {
             BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList()?.ifEmpty {
                 BluetoothController.pairedDevices.toList()
@@ -923,7 +923,7 @@ class MainActivity : CameraActivity() {
                 } catch (_: Exception) {
                 }
                 try {
-                    // [uvcpad-fix-p2] S+ ACTION_REQUEST_DISCOVERABLE 需要 BLUETOOTH_CONNECT：无权限时降级提示
+                    // [uvcpad-fix-p2] S+ ACTION_REQUEST_DISCOVERABLE needs BLUETOOTH_CONNECT: degrade with a hint when permission is missing
                     val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
                     intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
                     startActivity(intent)
@@ -936,8 +936,8 @@ class MainActivity : CameraActivity() {
             if (idx in 0 until devices.size) {
                 val target = devices[idx]
                 if (target.address != currentHost?.address) {
-                    // [uvcpad-last-device-click] 点击目标设备即记忆并落盘（不等连接成功：连接失败也
-                    // 记住意图，下次自动连接仍优先尝试）；连接成功回调另有一次回写（双保险，见 onStart 接线）
+                    // [uvcpad-last-device-click] Tapping the target device remembers it and persists immediately (not waiting for connection success: even a failed
+                    // connection keeps the intent, so the next auto-connect still prefers it); the connection-success callback writes once more (double insurance, see the onStart wiring)
                     prefs.lastDeviceAddress = target.address
                     BluetoothController.lastDeviceAddress = target.address
                     BluetoothController.switchTo(target)
@@ -949,28 +949,28 @@ class MainActivity : CameraActivity() {
         popup.show()
     }
 
-    // ============ Touch-area alignment (uvcpad-touch-align: 触控区域 = 显示区域) ============
+    // ============ Touch-area alignment (uvcpad-touch-align: touch area = display area) ============
 
     /**
-     * [uvcpad-touch-align] 把触控层对齐到采集画面实际显示矩形。
+     * [uvcpad-touch-align] Aligns the touch layer to the actual display rectangle of the capture frame.
      *
-     * 显示区域 = AspectRatioTextureView 的布局 bounds（AUSBC onMeasure 按视频宽高比 fit-inside
-     * 自缩放 + getGravity()=CENTER 居中，AUSBC 3.6.0 源码确认），相对 rootLayout 换算后写入触控层
-     * LayoutParams（margin + 精确尺寸；值未变化时 alignToDisplayRect 内部直接返回，无额外布局）。
+     * Display area = AspectRatioTextureView's layout bounds (AUSBC scales it fit-inside in onMeasure by video aspect ratio
+     * + getGravity()=CENTER centers it, confirmed in AUSBC 3.6.0 source), converted to rootLayout-relative coordinates and written to the touch layer's
+     * LayoutParams (margin + exact size; alignToDisplayRect returns early internally when unchanged, no extra layout).
      *
-     * 边界处理：
-     * - 相机视图不存在/未布局（尺寸 0）→ 触控层退化为 0×0：任何触摸都落不到本层；
-     * - 显示区域外的触摸（黑边/留白）落在非 clickable 的 cameraViewContainer → 框架直接丢弃，
-     *   不产生任何 HID 事件；
-     * - 手势连续性：ACTION_DOWN 落在显示区域内 → 事件流归触控层（Android 归属模型），手指滑出
-     *   显示区域后 MOVE 仍持续派发给本层 → 拖拽不丢失（ViewListener 链路原样工作）。
+     * Edge handling:
+     * - camera view absent/not laid out (size 0) → the touch layer degrades to 0×0: no touch can land on it;
+     * - touches outside the display area (black bars/letterbox) land on the non-clickable cameraViewContainer → dropped directly by the framework,
+     *   producing no HID events;
+     * - gesture continuity: ACTION_DOWN inside the display area → the event stream belongs to the touch layer (Android ownership model); when the finger slides out
+     *   of the display area, MOVE keeps dispatching to this layer → drag is not lost (the ViewListener chain works as-is).
      */
     private fun syncTouchLayerBounds() {
-        // [uvcpad-touch-align-fix] 类型防御：AUSBC initView 用 removeAllViews + 单个 addView 保证
-        // 容器只有相机视图一个子 View；相机视图由 getCameraView() 程序化创建
-        // （AspectRatioTextureView，extends TextureView，无 resource id，无法 findViewById），
-        // 故校验子 View 类型而非隐式信任 getChildAt(0)。类型不符（未来容器混入其他子 View）时
-        // 按"无相机视图"保守处理（触控层 0×0）。
+        // [uvcpad-touch-align-fix] Type defense: AUSBC initView guarantees via removeAllViews + a single addView that
+        // the container has only one child, the camera view; the camera view is created programmatically by getCameraView()
+        // (AspectRatioTextureView, extends TextureView, has no resource id and cannot be found via findViewById),
+        // so the child type is verified instead of implicitly trusting getChildAt(0). On a type mismatch (future container mixing in other child views),
+        // treat it conservatively as "no camera view" (touch layer 0×0).
         val cameraView = cameraViewContainer.getChildAt(0)
             ?.takeIf { it is TextureView }
         if (cameraView == null || cameraView.width <= 0 || cameraView.height <= 0) {
@@ -1070,10 +1070,10 @@ class MainActivity : CameraActivity() {
     }
 
     /**
-     * [uvcpad-fix-p2] 连接守卫（API≤30 放宽）：定位权限只影响"发现新设备"，不影响
-     * "已配对设备连接"——本应用不做主动扫描（无 startDiscovery），≤30 时 BLUETOOTH/
-     * BLUETOOTH_ADMIN 为普通权限（安装即授予）→ 直接放行，避免定位权限门禁过严导致
-     * 已配对设备无法连接。发现/扫描路径如需恢复，另行使用严格版守卫（要求定位权限）。
+     * [uvcpad-fix-p2] Connect guard (relaxed on API≤30): the location permission only affects "discovering new devices", not
+     * "connecting to paired devices" — this app does no active scanning (no startDiscovery), and on ≤30 BLUETOOTH/
+     * BLUETOOTH_ADMIN are normal permissions (granted at install) → pass directly, so an over-strict location gate cannot
+     * block connecting to already-paired devices. If the discovery/scan path is ever needed, use the strict guard (requires the location permission) separately.
      */
     private fun checkBluetoothPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -1085,7 +1085,7 @@ class MainActivity : CameraActivity() {
     }
 
     /**
-     * [uvcpad-fix-p2] 安全读取设备名（S+ 无 BLUETOOTH_CONNECT 时回退地址，避免 SecurityException）
+     * [uvcpad-fix-p2] Safely reads the device name (falls back to the address without BLUETOOTH_CONNECT on S+, avoiding SecurityException)
      */
     @SuppressLint("MissingPermission")
     private fun btDeviceName(device: BluetoothDevice?): String {
@@ -1097,7 +1097,7 @@ class MainActivity : CameraActivity() {
     }
 
     /**
-     * [uvcpad-fix-p2] 安全读取连接状态（S+ getConnectionState 需要 BLUETOOTH_CONNECT）
+     * [uvcpad-fix-p2] Safely reads the connection state (S+ getConnectionState needs BLUETOOTH_CONNECT)
      */
     @SuppressLint("MissingPermission")
     private fun btConnectionState(device: BluetoothDevice): Int? {
@@ -1139,8 +1139,8 @@ class MainActivity : CameraActivity() {
             val msg = getString(R.string.usb_permission_hint)
             showError(msg)
             toast(msg)
-            // [uvcpad-fix-p2] C1：忽略弹窗后 30s 重置提示标记 → 下次 attach intent（或再插拔）
-            // 会再次提示；授权成功（hasPermission 分支 / 相机 OPENED / onDestroy）时取消该重置任务
+            // [uvcpad-fix-p2] C1: reset the hint marker 30s after the dialog is ignored → the next attach intent (or replug)
+            // re-prompts; the reset task is cancelled on grant (hasPermission branch / camera OPENED / onDestroy)
             usbHintHandler.removeCallbacksAndMessages(null)
             usbHintHandler.postDelayed({
                 usbHintActive = false
@@ -1177,9 +1177,9 @@ class MainActivity : CameraActivity() {
     }
 
     private fun toast(msg: String) {
-        // [uvcpad-toast-singleton] 单例复用：取消仍在展示/排队的旧 toast 再显示新消息，
-        // 避免 Android Toast 默认排队机制导致提示堆积（新消息冲不掉旧的）
-        // [uvcpad-fix-p3] 用 applicationContext 创建 Toast：静态 sToast 不再持有 Activity 引用
+        // [uvcpad-toast-singleton] Singleton reuse: cancel the still-showing/queued old toast before showing a new message,
+        // avoiding the Android Toast default queueing mechanism piling up hints (a new message cannot push out the old one)
+        // [uvcpad-fix-p3] Create the Toast with applicationContext: the static sToast no longer holds an Activity reference
         sToast?.cancel()
         sToast = Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).also { it.show() }
     }

@@ -10,50 +10,50 @@ import android.widget.FrameLayout
 import com.github.ifeel.uvcpad.bt.listeners.ViewListener
 
 /**
- * 透明触控层（DESIGN §3.2 新建；[uvcpad-touch-align] 需求：触控区域 = 显示区域）。
+ * Transparent touch layer (new in DESIGN §3.2; [uvcpad-touch-align] requirement: touch area = display area).
  *
- * 职责：叠加在采集画面上，视觉上完全透出底层画面（不绘制任何内容），
- * 把触摸事件原样转发给手势引擎 [ViewListener]（蓝牙连接后由 MainActivity 挂载）。
+ * Responsibility: overlaid on the capture frame, fully transparent visually (draws nothing),
+ * forwards touch events as-is to the gesture engine [ViewListener] (mounted by MainActivity after Bluetooth connects).
  *
- * 触控区域：[alignToDisplayRect] 把本层收缩到采集画面实际显示矩形（= AspectRatioTextureView
- * 的布局 bounds，AUSBC 按视频宽高比 fit-inside 自缩放）。显示区域外的触摸落在非 clickable 的
- * cameraViewContainer 上被框架直接丢弃 → 不产生任何 HID 事件；显示区域内的触摸才进入本层。
+ * Touch area: [alignToDisplayRect] shrinks this layer to the actual display rectangle of the capture frame (= AspectRatioTextureView's
+ * layout bounds; AUSBC scales it fit-inside according to the video aspect ratio). Touches outside the display area land on the non-clickable
+ * cameraViewContainer and are dropped by the framework → no HID events; only touches inside the display area reach this layer.
  *
- * 挂载/卸载：
- * - 蓝牙连接成功 → [setGestureListener] 挂载手势引擎；
- * - 蓝牙断开 → 先置 null（先卸监听再置空 sender，DESIGN §3.7），后续触摸不再产生 HID 报告。
+ * Mount/unmount:
+ * - Bluetooth connects → [setGestureListener] mounts the gesture engine;
+ * - Bluetooth disconnects → set to null first (unmount the listener before nulling the sender, DESIGN §3.7); subsequent touches produce no HID reports.
  *
- * 事件模型：无背景、非 clickable，靠重写 [onTouchEvent] 转发并返回 true 接收事件链；
- * 未挂载手势引擎时返回 false，事件自然穿透（不影响 M2 顶部 UI 区域的事件路由）。
+ * Event model: no background, non-clickable; forwards via overridden [onTouchEvent] and returns true to receive the event chain;
+ * returns false when no gesture engine is mounted, letting events pass through naturally (does not affect event routing of the M2 top UI area).
  */
 class TransparentTouchLayer @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    /** 手势引擎；null = 未连接/已断开，触摸不产生任何报告 */
+    /** Gesture engine; null = not connected/disconnected, touches produce no reports */
     private var gestureListener: ViewListener? = null
 
     /**
-     * 任意触摸回调（M2，DESIGN §3.4 "任意触摸（三角/按键栏/触控层）都重置计时"）：
-     * 本层收到任何触摸事件时回调，MainActivity 用它重置按键栏自动隐藏计时。
+     * Any-touch callback (M2, DESIGN §3.4 "any touch (triangle/key bar/touch layer) resets the timer"):
+     * invoked when this layer receives any touch event; MainActivity uses it to reset the key bar auto-hide timer.
      */
     var onAnyTouch: (() -> Unit)? = null
 
-    /** 蓝牙连接成功后挂载手势引擎；断开时传入 null 卸载（DESIGN §3.7：先卸监听再置空 sender） */
+    /** Mounts the gesture engine after Bluetooth connects; pass null to unmount on disconnect (DESIGN §3.7: unmount the listener before nulling the sender) */
     fun setGestureListener(listener: ViewListener?) {
         gestureListener = listener
     }
 
     /**
-     * 触控区域对齐（[uvcpad-touch-align]）：把本层收缩到采集画面实际显示矩形。
+     * Touch area alignment ([uvcpad-touch-align]): shrinks this layer to the actual display rectangle of the capture frame.
      *
-     * [rect] 为相对父容器（rootLayout）的坐标；由 MainActivity 在每次布局变化后调用
-     * （首次布局 / switchMode 分辨率切换 / 旋转重建，见 DESIGN §3.2）。零尺寸
-     * （width/height = 0）表示暂无可对齐的显示区域（相机未打开/视图未布局）：触控层退化为
-     * 0×0，任何触摸都落不到本层 → 不响应、不产生 HID 事件。
+     * [rect] is in coordinates relative to the parent container (rootLayout); called by MainActivity after every layout change
+     * (first layout / switchMode resolution switch / rotation rebuild, see DESIGN §3.2). Zero size
+     * (width/height = 0) means there is no display area to align to yet (camera not opened / view not laid out): the touch layer degrades
+     * to 0×0 and no touch can land on it → no response, no HID events.
      *
-     * 值未变化时直接返回，避免无谓的重新布局（布局监听高频触发时会退化为空操作）。
+     * Returns early when the value is unchanged, avoiding needless re-layout (degrades to a no-op when the layout listener fires frequently).
      */
     fun alignToDisplayRect(rect: Rect) {
         val lp = layoutParams as? FrameLayout.LayoutParams ?: return
@@ -68,12 +68,13 @@ class TransparentTouchLayer @JvmOverloads constructor(
         lp.topMargin = rect.top
         lp.width = width
         lp.height = height
-        // [uvcpad-touch-align-fix] layoutParams 写入会触发一次布局 → OnGlobalLayoutListener 再次回调
-        // syncTouchLayerBounds；此时值已相同会在上方直接返回，形成最多 2 次触发的无害循环（无死循环风险）。
+        // [uvcpad-touch-align-fix] Writing layoutParams triggers one layout pass → OnGlobalLayoutListener calls
+        // syncTouchLayerBounds again; by then the values are identical and the early return above kicks in, forming a
+        // harmless loop of at most 2 triggers (no infinite-loop risk).
         layoutParams = lp
     }
 
-    /** 不绘制任何内容（透明层只收事件不画图，DESIGN §3.2） */
+    /** Draws nothing (the transparent layer only receives events and draws no graphics, DESIGN §3.2) */
     override fun onDraw(canvas: Canvas) {
         // Intentionally empty: the touch layer is invisible by design
     }

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- [uvcpad-keybar-font] 按键栏按钮统一样式：高度交由 wrap_content + 统一字号行高决定
-         （字号一致 → 行高一致 → 按钮自然等高），不再固定 40dp。
-         字号不进 style —— 6 个按钮在 layout 中统一 14sp。
-         singleLine：蓝牙设备名过长时单行省略（配合按钮自身的 ellipsize="end"）。 -->
+    <!-- [uvcpad-keybar-font] Unified key-bar button style: height driven by wrap_content + consistent font size / line height
+         (same font size → same line height → buttons naturally equal height), no longer fixed at 40dp.
+         Font size is not put into the style — all 6 buttons use 14sp in the layout.
+         singleLine: overlong Bluetooth device names are truncated to a single line (paired with the button's own ellipsize="end"). -->
     <style name="KeyBarButton">
         <item name="android:layout_height">wrap_content</item>
         <item name="android:gravity">center</item>

@@ -1,14 +1,14 @@
 package com.github.ifeel.uvcpad.bt
 
 /**
- * HID 描述符集合（裁剪自 KeysJoy DescriptorCollection，DESIGN §4.2）。
+ * HID descriptor collection (trimmed from KeysJoy DescriptorCollection, DESIGN §4.2).
  *
- * 仅保留鼠标描述符：MOUSE_RELATIVE_WITH_SCROLL（主，7 字节报告：按钮2bit+pad6 / dx16 / dy16 / vScroll8 / hScroll8，
- * 与 ScrollableTrackpadMouseReport ID=4 严格对应）与 MOUSE_RELATIVE_WITH_SCROLL_NOTSMOOTH（回退，
- * 同一 7 字节布局、更简单的描述符结构）。
- * 键盘/绝对鼠标/featurerr 等未用描述符一律删除（uvcpad 纯触控板，不含键盘，Q2 ✅）。
+ * Only mouse descriptors are kept: MOUSE_RELATIVE_WITH_SCROLL (primary, 7-byte report: buttons 2bit+pad6 / dx16 / dy16 / vScroll8 / hScroll8,
+ * strictly corresponding to ScrollableTrackpadMouseReport ID=4) and MOUSE_RELATIVE_WITH_SCROLL_NOTSMOOTH (fallback,
+ * same 7-byte layout with a simpler descriptor structure).
+ * Unused descriptors (keyboard/absolute mouse/featurerr etc.) are all removed (uvcpad is a pure touchpad without a keyboard, Q2 ✅).
  *
- * 字节数组内容与 KeysJoy 源码逐字一致（仅做删除，不做任何修改）。
+ * The byte array content is verbatim from the KeysJoy source (only deletions, no modifications).
  */
 object DescriptorCollection {
 

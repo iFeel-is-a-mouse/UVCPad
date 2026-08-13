@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- uvcpad M2 layout (DESIGN §3.1):
-     Z 序（下→上）：cameraViewContainer（UVC 画面）→ touchLayer（触控层，运行时对齐到显示区域）
-     → topUiContainer（下拉三角 + 按键栏，M2 交互入口）→ errorText（错误提示，仅出错时可见）。
-     [uvcpad-touch-align]：touchLayer 不再铺满全屏——MainActivity 在每次布局变化时把其 bounds
-     收缩到 AspectRatioTextureView 的实际显示矩形（显示区域 = 画面实际占用的矩形，DESIGN §3.2）。 -->
+     Z order (bottom→top): cameraViewContainer (UVC frame) → touchLayer (touch layer, aligned to the display area at runtime)
+     → topUiContainer (drop triangle + key bar, M2 interaction entry) → errorText (error message, visible only on errors).
+     [uvcpad-touch-align]: touchLayer no longer fills the whole screen — MainActivity shrinks its bounds to the actual
+     display rectangle of AspectRatioTextureView on every layout change (display area = rectangle actually occupied by the frame, DESIGN §3.2). -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootLayout"
     android:layout_width="match_parent"
@@ -16,32 +16,34 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- 触控层：不绘制任何内容，仅接收触摸事件并转发给 ViewListener（蓝牙连接后挂载手势）。
-         位于 cameraViewContainer 之上 → 显示区域内的触摸优先派发到本层。
-         [uvcpad-touch-align]：XML 里保持全屏占位，MainActivity 在每次布局变化（首次布局 /
-         分辨率切换 / 旋转重建）时把本层收缩到 AspectRatioTextureView 的显示矩形；显示区域外
-         （黑边/留白）的触摸落在非 clickable 的 cameraViewContainer 上被框架丢弃，不产生任何
-         HID 事件。蓝牙断开时卸载手势（DESIGN §3.2）。
-         注意：本层不能放进 cameraViewContainer —— AUSBC initView() 会 removeAllViews() 清空
-         容器内所有 XML 子 View（AUSBC 3.6.0 源码确认，DESIGN §3.2）。 -->
+    <!-- Touch layer: draws nothing, only receives touch events and forwards them to ViewListener (gestures mounted after Bluetooth connects).
+         Sits above cameraViewContainer → touches inside the display area are dispatched to this layer first.
+         [uvcpad-touch-align]: keeps a full-screen placeholder in XML; MainActivity shrinks this layer to AspectRatioTextureView's
+         display rectangle on every layout change (first layout / resolution switch / rotation rebuild); touches outside the
+         display area (black bars/letterbox) land on the non-clickable cameraViewContainer and are dropped by the framework,
+         producing no HID events. Gestures are unmounted when Bluetooth disconnects (DESIGN §3.2).
+         Note: this layer must NOT go inside cameraViewContainer — AUSBC initView() calls removeAllViews(), clearing all
+         XML child views in the container (confirmed in AUSBC 3.6.0 source, DESIGN §3.2). -->
     <com.github.ifeel.uvcpad.touch.TransparentTouchLayer
         android:id="@+id/touchLayer"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- M2: 顶部交互区（DESIGN §3.1）——唯一常驻 UI 下拉三角 + 自动隐藏按键栏。
-         Z 序在触控层之上：落在三角/按键栏边界内的事件先派发到本区，不穿透触控手势层
-         （M2 验收关键项：点三角/点菜单按钮不产生鼠标报告，DESIGN §3.3/§3.4）。
-         三角在上（XML 后者先派发）：按键栏展开时三角仍可见、仍可点击（toggle 收起）。 -->
+    <!-- M2: top interaction area (DESIGN §3.1) — the only always-visible UI: drop triangle + auto-hiding key bar.
+         Z order above the touch layer: events inside the triangle/key-bar bounds are dispatched to this area first and do not
+         penetrate the touch gesture layer (M2 acceptance key: tapping the triangle/menu buttons produces no mouse reports,
+         DESIGN §3.3/§3.4).
+         Triangle on top (later XML view is dispatched first): the triangle stays visible and clickable (toggle to collapse)
+         while the key bar is expanded. -->
     <FrameLayout
         android:id="@+id/topUiContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top">
 
-        <!-- 按键栏：横向顶栏（参考 hdmi2mp topOverlay 样式），顶部滑出，默认 GONE；
-             KeyBarController 控制显隐/4s 自动隐藏；区域事件消费（DESIGN §3.4）。
-             按钮集合不含任何键盘设置项（Q2 ✅）：速度 / 蓝牙 / 自动配对 / 分辨率 / 截图 / 退出。 -->
+        <!-- Key bar: horizontal top bar (following the hdmi2mp topOverlay style), slides out from the top, GONE by default;
+             KeyBarController controls show/hide and 4s auto-hide; area event consumption (DESIGN §3.4).
+             The button set contains no keyboard settings items (Q2 ✅): speed / Bluetooth / auto-pair / resolution / screenshot / exit. -->
         <com.github.ifeel.uvcpad.ui.KeyBarPanel
             android:id="@+id/keyBar"
             android:layout_width="match_parent"
@@ -55,7 +57,7 @@
             android:paddingBottom="8dp"
             android:visibility="gone">
 
-            <!-- 速度：1️⃣–5️⃣ 循环（SpeedLevel，写 prefs "speed_level"，更新 viewListener.mouseSpeed/scrollSpeed） -->
+            <!-- Speed: 1️⃣–5️⃣ cycle (SpeedLevel, writes prefs "speed_level", updates viewListener.mouseSpeed/scrollSpeed) -->
             <TextView
                 style="@style/KeyBarButton"
                 android:id="@+id/btnSpeed"
@@ -65,7 +67,7 @@
                 android:text="4️⃣"
                 android:textSize="14sp" />
 
-            <!-- 蓝牙：显示设备名/状态；点击连接/断开；长按 → 多设备切换（showDeviceSwitcher） -->
+            <!-- Bluetooth: shows device name/status; tap to connect/disconnect; long-press → multi-device switch (showDeviceSwitcher) -->
             <TextView
                 style="@style/KeyBarButton"
                 android:id="@+id/btnBt"
@@ -77,7 +79,7 @@
                 android:text="📡"
                 android:textSize="14sp" />
 
-            <!-- 自动配对 🔗：切换 autoPairFlag + startAutoReconnect/stopAutoReconnect -->
+            <!-- Auto-pair 🔗: toggles autoPairFlag + startAutoReconnect/stopAutoReconnect -->
             <TextView
                 style="@style/KeyBarButton"
                 android:id="@+id/btnAutoPair"
@@ -87,7 +89,7 @@
                 android:text="🔗"
                 android:textSize="14sp" />
 
-            <!-- 分辨率：16:9 ↔ 4:3（switchMode 复用现有，按钮文案随 currentMode 更新） -->
+            <!-- Resolution: 16:9 ↔ 4:3 (reuses switchMode; button label follows currentMode) -->
             <TextView
                 style="@style/KeyBarButton"
                 android:id="@+id/btnMode"
@@ -97,7 +99,7 @@
                 android:text="16:9"
                 android:textSize="14sp" />
 
-            <!-- 截图 📷：captureJpg()（含 MediaStore 导入） -->
+            <!-- Screenshot 📷: captureJpg() (including MediaStore import) -->
             <TextView
                 style="@style/KeyBarButton"
                 android:id="@+id/btnCapture"
@@ -107,14 +109,14 @@
                 android:text="📷"
                 android:textSize="14sp" />
 
-            <!-- 弹性空隙：把退出按钮推到最右（hdmi2mp 惯例），同时让三角（顶部居中）
-                 落在按键栏的空隙上方，展开时三角仍可点击收起 -->
+            <!-- Flexible spacer: pushes the exit button to the far right (hdmi2mp convention), while letting the triangle (top-center)
+                 sit above the spacer so it stays clickable to collapse when the key bar is expanded -->
             <Space
                 android:layout_width="0dp"
                 android:layout_height="1dp"
                 android:layout_weight="1" />
 
-            <!-- 退出 ⏻：清理 + finish（onDestroy → AUSBC clear() 释放 UVC） -->
+            <!-- Exit ⏻: cleanup + finish (onDestroy → AUSBC clear() releases UVC) -->
             <TextView
                 style="@style/KeyBarButton"
                 android:id="@+id/btnExit"
@@ -125,8 +127,9 @@
                 android:textSize="14sp" />
         </com.github.ifeel.uvcpad.ui.KeyBarPanel>
 
-        <!-- 下拉三角：唯一常驻 UI，顶部居中，热区 48dp×48dp；事件豁免区（DESIGN §3.3）
-             在按键栏之上（XML 后者先派发）→ 按键栏展开期间三角仍可见、仍可 toggle 收起 -->
+        <!-- Drop triangle: the only always-visible UI, top-center, hot area 48dp×48dp; event-exempt area (DESIGN §3.3)
+             above the key bar (later XML view is dispatched first) → the triangle stays visible and can be toggled to collapse
+             while the key bar is expanded -->
         <com.github.ifeel.uvcpad.ui.DropTriangleView
             android:id="@+id/dropTriangle"
             android:layout_width="48dp"
@@ -135,7 +138,7 @@
     </FrameLayout>
 
     <!-- Error/notification area (diagnostics): initially hidden; shown by showError() on errors.
-         Kept from hdmi2mp verbatim (errorText 独立于工具栏，不随自动隐藏计时消失，便于用户阅读/拍摄) -->
+         Kept from hdmi2mp verbatim (errorText is independent of the toolbar and does not disappear with the auto-hide timer, making it easy for the user to read/photograph) -->
     <TextView
         android:id="@+id/errorText"
         android:layout_width="match_parent"

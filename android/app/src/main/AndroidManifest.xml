@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ============ 显示链路：USB/UVC + 相机（hdmi2mp 原样） ============ -->
+    <!-- ============ Display path: USB/UVC + camera (kept verbatim from hdmi2mp) ============ -->
     <!-- USB Host (OTG) and UVC device permissions -->
     <uses-permission android:name="android.permission.USB_PERMISSION" />
     <uses-feature
@@ -17,17 +17,17 @@
 
     <!-- Camera runtime permission: merged declaration from the AUSBC library; required to open the MS2130 UVC; requested proactively at app startup -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- [uvcpad-fix-p3] CAMERA 权限隐含摄像头硬件要求，但本应用用的是 UVC 采集卡（非本机摄像头）：
-         声明摄像头非必需，避免 PermissionImpliesUnsupportedChromeOsHardware lint 与 Play 硬件过滤 -->
+    <!-- [uvcpad-fix-p3] The CAMERA permission implies a camera hardware requirement, but this app uses a UVC capture card (not the built-in camera):
+         declaring camera as not required avoids the PermissionImpliesUnsupportedChromeOsHardware lint and Play hardware filtering -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
-    <!-- [uvcpad-fix-p2] AUSBC 库合并带入 RECORD_AUDIO（本应用 AudioSource.NONE 不需要）：显式剔除 -->
+    <!-- [uvcpad-fix-p2] The AUSBC library merge brings in RECORD_AUDIO (not needed by this app's AudioSource.NONE): explicitly removed -->
     <uses-permission
         android:name="android.permission.RECORD_AUDIO"
         tools:node="remove" />
 
-    <!-- ============ 触控链路：蓝牙 HID（KeysJoy 原样） ============ -->
+    <!-- ============ Touch path: Bluetooth HID (kept verbatim from KeysJoy) ============ -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -38,16 +38,16 @@
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
-    <!-- API≤30 发现设备；S+ 因 BLUETOOTH_SCAN 声明 neverForLocation 而豁免定位权限 -->
+    <!-- API≤30: device discovery; S+ exempt from location permission because BLUETOOTH_SCAN declares neverForLocation -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <uses-feature
         android:name="android.hardware.bluetooth"
         android:required="true" />
 
-    <!-- 手势触觉反馈（ViewListener 使用） -->
+    <!-- Gesture haptic feedback (used by ViewListener) -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- 常亮（FLAG_KEEP_SCREEN_ON） -->
+    <!-- Keep screen on (FLAG_KEEP_SCREEN_ON) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application

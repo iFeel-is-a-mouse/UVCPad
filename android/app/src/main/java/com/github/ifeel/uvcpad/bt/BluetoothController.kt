@@ -53,11 +53,11 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     var autoPairFlag = false
 
     /**
-     * [uvcpad-fix-p1] 手动断开标记：btnBt 点击断开时置 true，抑制三处自动连接
-     * （onConnectionStateChanged DISCONNECTED 自动重连 / startAutoReconnect 循环 /
-     * onAppStatusChanged 自动 connect）；手动连接意图（btnBt 连接、switchTo、
-     * onAppStatusChanged 自动连、开启 autoPair）及任何连接成功时清 false。
-     * @Volatile：主线程写、binder 回调线程读。
+     * [uvcpad-fix-p1] Manual-disconnect marker: set to true when btnBt tap disconnects, suppressing the three auto-connect paths
+     * (onConnectionStateChanged DISCONNECTED auto-reconnect / startAutoReconnect loop /
+     * onAppStatusChanged auto connect); cleared to false by any manual connect intent (btnBt connect, switchTo,
+     * onAppStatusChanged auto connect, enabling autoPair) and on any successful connection.
+     * @Volatile: written on the main thread, read on binder callback threads.
      */
     @Volatile
     var manualDisconnectFlag = false
@@ -65,7 +65,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     var statusListener: ((String) -> Unit)? = null
 
     private fun updateStatus(msg: String) {
-        // [uvcpad-consistency-p3] 状态消息频率高（连接/断开/注册/发现等均触发，且同步走 toast）→ Log.d
+        // [uvcpad-consistency-p3] Status messages are high-frequency (connect/disconnect/register/discovery all trigger them, and they also go through toasts) → Log.d
         Log.d(TAG, "Status: $msg")
         statusListener?.invoke(msg)
     }
@@ -73,16 +73,16 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     var mpluggedDevice :BluetoothDevice? = null
 
     /**
-     * [uvcpad-last-device] 最近成功连接过的设备地址（自动连接优先目标）。
-     * 由 MainActivity 启动时从 prefs 注入；每次连接成功经 [lastDeviceConnectedListener] 回写 prefs。
-     * null = 无记忆，自动连接回退 mpluggedDevice（系统回调传入的设备）。
+     * [uvcpad-last-device] Address of the most recently successfully connected device (preferred target for auto-connect).
+     * Injected from prefs by MainActivity at startup; written back to prefs via [lastDeviceConnectedListener] on every successful connection.
+     * null = no memory, auto-connect falls back to mpluggedDevice (the device passed by the system callback).
      */
     var lastDeviceAddress: String? = null
 
-    /** [uvcpad-last-device] 连接成功回调：MainActivity 用它把最近连接设备持久化到 prefs */
+    /** [uvcpad-last-device] Connection-success callback: MainActivity uses it to persist the most recently connected device to prefs */
     var lastDeviceConnectedListener: ((BluetoothDevice) -> Unit)? = null
 
-    /** [uvcpad-consistency-p2] 记忆地址判定失效（已不在已配对列表）回调：MainActivity 用它清除 prefs 持久记忆 */
+    /** [uvcpad-consistency-p2] Callback when the remembered address is invalidated (no longer in the paired list): MainActivity uses it to clear the persisted prefs memory */
     var lastDeviceAddressRemovedListener: (() -> Unit)? = null
 
     /** List of paired devices for device switching */
@@ -93,31 +93,31 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     private var reconnectHandler: Handler? = null
     private val RECONNECT_INTERVAL_MS = 5000L
 
-    /** [uvcpad-consistency-p3] getProfileProxy 无回调时的 initInProgress 强制复位超时 */
+    /** [uvcpad-consistency-p3] Timeout to force-reset initInProgress when getProfileProxy never calls back */
     private val INIT_TIMEOUT_MS = 3000L
 
-    /** [uvcpad-fix-p2] getProfileProxy 已发出未返回时短路重复 init（首启 onStart+onResume 双调） */
+    /** [uvcpad-fix-p2] Short-circuits duplicate init when getProfileProxy has been issued but not yet returned (onStart+onResume double-call on first launch) */
     private var initInProgress = false
 
-    /** [uvcpad-consistency-p3] getProfileProxy 理论挂起兜底：3s 无回调强制复位 initInProgress（防永久短路后续 init） */
+    /** [uvcpad-consistency-p3] Theoretical-hang safety net: force-resets initInProgress if no callback within 3s (prevents permanently short-circuiting later inits) */
     private var initTimeoutHandler: Handler? = null
 
-    /** [uvcpad-fix-p2] 供权限检查使用的 applicationContext（init 时注入，不持有 Activity） */
+    /** [uvcpad-fix-p2] applicationContext used for permission checks (injected at init; does not hold the Activity) */
     private var appContext: Context? = null
 
-    /** [uvcpad-fix-p2] S1 registerApp 失败自动重试标记（仅重试一次） */
+    /** [uvcpad-fix-p2] Auto-retry marker for a failed S1 registerApp (retries only once) */
     private var registerAppRetried = false
 
-    /** [uvcpad-p2-retry-cleanup] registerApp 3s 重试 Handler（onServiceDisconnected 取消 pending 重试用） */
+    /** [uvcpad-p2-retry-cleanup] registerApp 3s retry Handler (onServiceDisconnected cancels the pending retry) */
     private var registerRetryHandler: Handler? = null
 
-    /** [uvcpad-p2-retry-cleanup] registerApp 3s 重试 Runnable（存字段以便取消；执行时读 this.btHid，不捕获旧 proxy） */
+    /** [uvcpad-p2-retry-cleanup] registerApp 3s retry Runnable (stored in a field so it can be cancelled; reads this.btHid at execution, does not capture the old proxy) */
     private var registerRetryRunnable: Runnable? = null
 
-    /** [uvcpad-fix-p2] S8 切换设备 connect 失败的单次重试标记 */
+    /** [uvcpad-fix-p2] Single-retry marker for a failed S8 device-switch connect */
     private var switchRetryScheduled = false
 
-    /** [uvcpad-consistency-p2] S8 切换重试 Handler/Runnable（存字段以便 switchTo 取消：3s 内再切设备不被旧重试覆盖） */
+    /** [uvcpad-consistency-p2] S8 switch-retry Handler/Runnable (stored in fields so switchTo can cancel: switching again within 3s is not overridden by the old retry) */
     private var switchRetryHandler: Handler? = null
     private var switchRetryRunnable: Runnable? = null
 
@@ -125,14 +125,15 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     private var disconnectListener: (()->Unit)? = null
 
     /**
-     * [uvcpad-last-device] 自动连接的目标设备：优先最近成功连接过的设备（lastDeviceAddress，
-     * 多设备场景下系统 onAppStatusChanged 可能总返回最早配对的设备 → 总连错设备）；
-     * 无记忆或地址非法时回退系统回调的 mpluggedDevice。返回 null 表示当前无可自动连接目标。
+     * [uvcpad-last-device] Auto-connect target device: prefers the most recently successfully connected device (lastDeviceAddress;
+     * in multi-device scenarios the system onAppStatusChanged may always return the earliest paired device → always connects to the wrong one);
+     * falls back to the system-callback mpluggedDevice when there is no memory or the address is invalid. Returns null when there is no auto-connect target.
      *
-     * [uvcpad-consistency-p2] 记忆地址必须仍在已配对列表（bondedDevices）里才返回：
-     * 换设备/重新配对后旧地址已不在已配对列表，而 getRemoteDevice 不校验配对状态仍会返回对象
-     * → 5s 无限重连死设备、永不回退默认设备（P2-2 空转）。不在列表 → 清空记忆（内存+prefs）回退
-     * mpluggedDevice；无权限读取已配对列表时保守返回记忆地址（维持旧行为，避免误清记忆）。
+     * [uvcpad-consistency-p2] The remembered address is returned only if it is still in the paired list (bondedDevices):
+     * after swapping/re-pairing devices the old address is no longer in the paired list, yet getRemoteDevice still returns an object without
+     * checking the pairing state → 5s infinite reconnect loop to a dead device, never falling back to the default device (P2-2 idle spin).
+     * Not in the list → clear the memory (in-memory + prefs) and fall back to mpluggedDevice; when there is no permission to read the paired
+     * list, conservatively return the remembered address (preserves old behavior, avoids wrongly clearing the memory).
      */
     fun resolveAutoConnectTarget(): BluetoothDevice? {
         val lastAddr = lastDeviceAddress
@@ -149,12 +150,12 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     return remembered
                 }
                 if (bonded != null) {
-                    // 已配对列表可读且不含记忆地址：旧设备已删除/重新配对 → 清空记忆（内存+prefs），回退默认设备
+                    // The paired list is readable and does not contain the remembered address: the old device was removed/re-paired → clear the memory (in-memory + prefs) and fall back to the default device
                     Log.w(TAG, "Last device $lastAddr no longer bonded, clearing last-device memory")
                     lastDeviceAddress = null
                     lastDeviceAddressRemovedListener?.invoke()
                 } else {
-                    // 权限缺失无法校验：保守返回记忆地址，避免误清记忆
+                    // Cannot verify without permission: conservatively return the remembered address to avoid wrongly clearing the memory
                     return btAdapter.getRemoteDevice(lastAddr)
                 }
             } catch (e: IllegalArgumentException) {
@@ -177,17 +178,17 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     stopAutoReconnect()
                     return
                 }
-                // [uvcpad-fix-p1] 用户手动断开后不再自动重连
+                // [uvcpad-fix-p1] No auto-reconnect after the user manually disconnects
                 if (manualDisconnectFlag) {
                     stopAutoReconnect()
                     return
                 }
-                // [uvcpad-fix-p2] S7：蓝牙服务/代理不可用（btHid 为空）时终止循环，避免无限空转
+                // [uvcpad-fix-p2] S7: terminate the loop when the BT service/proxy is unavailable (btHid null), avoiding infinite idle spin
                 if (btHid == null) {
                     stopAutoReconnect()
                     return
                 }
-                // [uvcpad-last-device] 重连目标同样走 resolveAutoConnectTarget()：优先最近连接设备
+                // [uvcpad-last-device] The reconnect target also goes through resolveAutoConnectTarget(): prefers the most recent device
                 val device = resolveAutoConnectTarget() ?: run {
                     stopAutoReconnect()
                     return
@@ -215,8 +216,8 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     }
 
     fun init(ctx: Context) {
-        // [uvcpad-fix-p2] 首启 onStart initBluetooth + onResume btHid==null 同帧连跑双 getProfileProxy：
-        // 已发出未返回时短路第二次调用；onServiceConnected/onServiceDisconnected 时清标志
+        // [uvcpad-fix-p2] On first launch, onStart initBluetooth and onResume btHid==null run two getProfileProxy calls in the same frame:
+        // short-circuit the second call while one is already issued and not returned; the flag is cleared on onServiceConnected/onServiceDisconnected
         if (initInProgress) {
             Log.i(TAG, "init already in progress, skipping duplicate getProfileProxy")
             return
@@ -237,9 +238,9 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         }
         if (btHid != null) return
         initInProgress = true
-        // [uvcpad-consistency-p3] 理论挂起兜底：getProfileProxy 理论上可能永不回调
-        // （onServiceConnected/onServiceDisconnected 均不触发）→ initInProgress 永久 true 短路
-        // 所有后续 init（唯一恢复手段是重启）。3s 后强制复位标志；正常回调路径显式取消定时任务。
+        // [uvcpad-consistency-p3] Theoretical-hang safety net: getProfileProxy may theoretically never call back
+        // (neither onServiceConnected nor onServiceDisconnected fires) → initInProgress stays true and short-circuits
+        // all later inits (the only recovery is a restart). Force-reset the flag after 3s; the normal callback path explicitly cancels the timer.
         initTimeoutHandler?.removeCallbacksAndMessages(null)
         initTimeoutHandler = Handler(Looper.getMainLooper())
         initTimeoutHandler?.postDelayed({
@@ -286,15 +287,15 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 initInProgress = false
                 initTimeoutHandler?.removeCallbacksAndMessages(null)
                 btHid = null
-                // [uvcpad-p2-retry-cleanup] 复位 registerApp 重试标记 + 取消 pending 3s 重试：
-                // 否则残留 Runnable 持有旧 proxy，3s 后重试失败置 btHid=null，误伤重连后的新 proxy
+                // [uvcpad-p2-retry-cleanup] Reset the registerApp retry marker + cancel the pending 3s retry:
+                // otherwise the leftover Runnable holds the old proxy and, failing the retry 3s later, sets btHid=null, harming the new proxy after reconnect
                 registerAppRetried = false
                 registerRetryHandler?.removeCallbacksAndMessages(null)
                 registerRetryHandler = null
                 registerRetryRunnable = null
-                // [uvcpad-fix-p1] 状态残留清理：hostDevice/mpluggedDevice 一并清空，避免下次
-                // init 时误以为仍连接；disconnectListener 通知 UI 拆除触控层（MainActivity 侧
-                // runOnUiThread 包裹，binder 线程调用安全）；重连循环一并停止（btHid 已失效）
+                // [uvcpad-fix-p1] State residue cleanup: hostDevice/mpluggedDevice cleared together to avoid
+                // the next init thinking it is still connected; disconnectListener notifies the UI to tear down the touch layer (MainActivity side
+                // wrapped in runOnUiThread, safe to call from binder threads); the reconnect loop is also stopped (btHid is already invalid)
                 hostDevice = null
                 mpluggedDevice = null
                 stopAutoReconnect()
@@ -330,8 +331,8 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
             } catch (e: Throwable) {
                 Log.e(TAG, "setName failed", e)
             }
-            // [uvcpad-fix-p2] S1：registerApp 失败不滞留——3s 后自动重试一次；仍失败则置
-            // btHid=null 允许后续 onResume/手动重进重新 init（用户可再次触发，不再卡死）
+            // [uvcpad-fix-p2] S1: a failed registerApp does not linger — auto-retries once after 3s; on another failure it sets
+            // btHid=null so later onResume/manual re-entry can re-init (the user can trigger it again instead of being stuck)
             if (tryRegisterApp(btHid)) {
                 registerAppRetried = false
                 updateStatus("HID registered. Search 'uvcpad' on target device")
@@ -339,14 +340,14 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 updateStatus("HID reg failed, check BT permissions")
                 if (!registerAppRetried) {
                     registerAppRetried = true
-                    // [uvcpad-p2-retry-cleanup] 重试 Runnable 存字段（原匿名 postDelayed 无法取消）；
-                    // 执行时读 this.btHid 而非捕获旧 proxy；onServiceDisconnected 会取消 pending 重试
+                    // [uvcpad-p2-retry-cleanup] The retry Runnable is stored in a field (the original anonymous postDelayed could not be cancelled);
+                    // it reads this.btHid at execution instead of capturing the old proxy; onServiceDisconnected cancels the pending retry
                     registerRetryHandler?.removeCallbacksAndMessages(null)
                     registerRetryHandler = Handler(Looper.getMainLooper())
                     registerRetryRunnable = object : Runnable {
                         override fun run() {
                             registerRetryRunnable = null
-                            // 极端竞态下服务已断开且未被取消 → btHid 可能为 null，直接放弃，不误伤
+                            // Under an extreme race the service may have disconnected without being cancelled → btHid may be null; give up directly without harming anything
                             val proxy = this@BluetoothController.btHid ?: return
                             if (tryRegisterApp(proxy)) {
                                 registerAppRetried = false
@@ -407,10 +408,10 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 if (device != null) {
                     hostDevice = device
                     stopAutoReconnect()
-                    // [uvcpad-fix-p1] 连接成功 = 手动断开意图已过期
+                    // [uvcpad-fix-p1] A successful connection means the manual-disconnect intent is expired
                     manualDisconnectFlag = false
-                    // [uvcpad-last-device] 每次连接成功都更新"最近连接"记忆（含手动切换成功：
-                    // 下次自动连接优先新设备），并经回调持久化到 prefs
+                    // [uvcpad-last-device] Every successful connection updates the "most recent" memory (including manual switch success:
+                    // the next auto-connect prefers the new device), persisted to prefs via the callback
                     lastDeviceAddress = device.address
                     lastDeviceConnectedListener?.invoke(device)
                     device?.let { dev ->
@@ -420,7 +421,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     }
 
                     deviceListener?.let { listener ->
-                        // [uvcpad-consistency-p3] btHid 可能瞬间置空（服务断开竞态）：非空断言会 NPE，改安全解包
+                        // [uvcpad-consistency-p3] btHid may be nulled momentarily (service-disconnect race): a non-null assertion would NPE, use safe unwrapping instead
                         btHid?.let { hid -> listener.invoke(hid, device) }
                     }
                     updateStatus("Connected: ${deviceName(device)}")
@@ -436,12 +437,12 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     targetSwitchDevice = null
                     Log.d(TAG, "Switching to device: ${deviceName(toSwitch)}")
                     updateStatus("Switching...")
-                    // [uvcpad-fix-p2] S8：切换目标 connect 失败 3s 后单次重试（autoPair off 时不再卡死）
+                    // [uvcpad-fix-p2] S8: single retry 3s after a switch-target connect failure (no longer stuck when autoPair is off)
                     tryConnectWithRetry(toSwitch)
                 } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
                     disconnectListener?.invoke()
                     updateStatus("Disconnected, waiting...")
-                    // [uvcpad-fix-p1] 手动断开后不自动重连
+                    // [uvcpad-fix-p1] No auto-reconnect after a manual disconnect
                     if (autoPairFlag && !manualDisconnectFlag && mpluggedDevice != null) {
                         Log.d(TAG, "Device disconnected, starting auto-reconnect loop")
                         startAutoReconnect()
@@ -468,12 +469,12 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 }
                 updateStatus("HID app registered")
                 if (autoPairFlag) {
-                    // [uvcpad-fix-p1] 手动断开后不自动连接（标记保留到用户手动连接/切换/重开 autoPair）；
-                    // 未标记时本路径本身即自动连接意图 → 清标记后连接
+                    // [uvcpad-fix-p1] No auto-connect after a manual disconnect (the marker stays until the user manually connects/switches/re-enables autoPair);
+                    // when not marked, this path itself is an auto-connect intent → clear the marker and connect
                     if (!manualDisconnectFlag) {
                         manualDisconnectFlag = false
-                        // [uvcpad-last-device] 自动连接目标优先"最近成功连接过的设备"（resolveAutoConnectTarget），
-                        // 无记忆时回退系统回调的 mpluggedDevice；目标为 null 时不自动连
+                        // [uvcpad-last-device] The auto-connect target prefers the "most recently successfully connected device" (resolveAutoConnectTarget),
+                        // falling back to the system-callback mpluggedDevice when there is no memory; no auto-connect when the target is null
                         val target = resolveAutoConnectTarget()
                         if (target != null) {
                             tryConnect(target)
@@ -531,8 +532,8 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
      */
     fun switchTo(device: BluetoothDevice) {
         Log.i(TAG, "switchTo: requested switch to ${deviceName(device)}")
-        // [uvcpad-consistency-p2] 新切换意图立即作废旧切换的 3s 重试：
-        // 否则旧 Runnable 3s 后连回旧设备，覆盖用户新选择（switchTo 后 3s 内再切场景）
+        // [uvcpad-consistency-p2] A new switch intent immediately invalidates the old switch's 3s retry:
+        // otherwise the old Runnable reconnects to the old device 3s later, overriding the user's new choice (switching again within 3s scenario)
         switchRetryScheduled = false
         switchRetryHandler?.removeCallbacksAndMessages(null)
         switchRetryRunnable = null
@@ -540,7 +541,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
             Log.i(TAG, "switchTo: already connected to ${deviceName(device)}, skipping")
             return
         }
-        // [uvcpad-fix-p1] 用户主动切换 = 新的连接意图 → 手动断开标记失效
+        // [uvcpad-fix-p1] A user-initiated switch is a new connect intent → the manual-disconnect marker becomes invalid
         manualDisconnectFlag = false
         targetSwitchDevice = device
         stopAutoReconnect()
@@ -548,14 +549,14 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
             ?: run {
                 // No current connection, connect directly
                 targetSwitchDevice = null
-                // [uvcpad-fix-p2] S8：connect 失败 3s 后单次重试
+                // [uvcpad-fix-p2] S8: single retry 3s after a connect failure
                 tryConnectWithRetry(device)
             }
     }
 
     /**
-     * [uvcpad-fix-p1] 清空全部回调监听（deviceListener/disconnectListener/statusListener）：
-     * MainActivity.onDestroy 调用，防止单例持有已销毁 Activity 的 lambda 引用泄漏。
+     * [uvcpad-fix-p1] Clears all callback listeners (deviceListener/disconnectListener/statusListener):
+     * called from MainActivity.onDestroy to prevent the singleton from holding lambdas referencing a destroyed Activity (leak).
      */
     fun clearListeners() {
         deviceListener = null
@@ -563,11 +564,11 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         statusListener = null
     }
 
-    // ============ 权限守卫 + 蓝牙操作封装（[uvcpad-fix-p2] MissingPermission + 运行时 SecurityException 兜底） ============
+    // ============ Permission guard + Bluetooth op wrappers ([uvcpad-fix-p2] MissingPermission + runtime SecurityException safety net) ============
 
     /**
-     * 统一蓝牙连接权限守卫：S+ 检查 BLUETOOTH_CONNECT，≤30 恒 true
-     * （BLUETOOTH 是普通权限安装即授予；定位只影响发现，不影响已配对连接）。
+     * Unified Bluetooth-connect permission guard: checks BLUETOOTH_CONNECT on S+, always true on ≤30
+     * (BLUETOOTH is a normal permission granted at install; location only affects discovery, not connecting to paired devices).
      */
     fun hasConnectPermission(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -577,7 +578,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         return true
     }
 
-    /** 安全读取设备名：无权限/异常时回退地址，避免 S+ SecurityException 崩溃 */
+    /** Safely reads the device name: falls back to the address on missing permission/exceptions, avoiding an S+ SecurityException crash */
     @SuppressLint("MissingPermission")
     private fun deviceName(device: BluetoothDevice?): String {
         return try {
@@ -587,7 +588,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         }
     }
 
-    /** 安全读取连接状态（getConnectionState 在 S+ 需要 BLUETOOTH_CONNECT） */
+    /** Safely reads the connection state (getConnectionState needs BLUETOOTH_CONNECT on S+) */
     @SuppressLint("MissingPermission")
     private fun connectionState(device: BluetoothDevice?): Int? {
         return try {
@@ -598,7 +599,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         }
     }
 
-    /** 权限守卫 + 异常兜底的 connect（无重试语义；重试由 startAutoReconnect 循环负责） */
+    /** Permission-guarded + exception-safe connect (no retry semantics; retries are handled by the startAutoReconnect loop) */
     fun tryConnect(device: BluetoothDevice?) {
         if (device == null || !hasConnectPermission()) return
         try {
@@ -608,7 +609,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         }
     }
 
-    /** 权限守卫 + 异常兜底的 disconnect */
+    /** Permission-guarded + exception-safe disconnect */
     fun tryDisconnect(device: BluetoothDevice?) {
         if (device == null || !hasConnectPermission()) return
         try {
@@ -619,10 +620,10 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     }
 
     /**
-     * [uvcpad-fix-p2] S8 切换设备专用 connect：失败 3s 后单次重试
-     * （autoPair off 时切换失败不再卡死；autoPair on 时重连循环本就覆盖）。
-     * [uvcpad-consistency-p2] 重试 Runnable 存字段（原匿名 postDelayed 无法取消）：
-     * switchTo 开头 removeCallbacks 取消旧重试，3s 内再切设备不被旧重试覆盖。
+     * [uvcpad-fix-p2] Device-switch-specific connect: single retry 3s after failure
+     * (a failed switch no longer gets stuck when autoPair is off; with autoPair on the reconnect loop already covers it).
+     * [uvcpad-consistency-p2] The retry Runnable is stored in a field (the original anonymous postDelayed could not be cancelled):
+     * switchTo removes callbacks at the start to cancel the old retry, so switching again within 3s is not overridden by the old retry.
      */
     private fun tryConnectWithRetry(device: BluetoothDevice?) {
         if (device == null || !hasConnectPermission()) return
@@ -652,7 +653,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         }
     }
 
-    /** [uvcpad-fix-p2] S1 registerApp 封装：异常视为失败，返回是否注册成功 */
+    /** [uvcpad-fix-p2] S1 registerApp wrapper: exceptions count as failure, returns whether registration succeeded */
     private fun tryRegisterApp(proxy: BluetoothHidDevice): Boolean {
         return try {
             proxy.registerApp(sdpRecord, null, qosOut, { it.run() }, this)

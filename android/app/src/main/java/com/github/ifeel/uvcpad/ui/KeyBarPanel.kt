@@ -6,26 +6,28 @@ import android.view.MotionEvent
 import android.widget.LinearLayout
 
 /**
- * 按键栏容器（DESIGN §3.4 新建）：横向顶栏（参考 hdmi2mp topOverlay 样式）。
+ * Key bar container (new in DESIGN §3.4): horizontal top bar (following the hdmi2mp topOverlay style).
  *
- * 区域事件消费（M2 验收关键项）：落在按键栏边界内的所有触摸被消费，不进触控手势层——
- * - 按钮各自 clickable，DOWN 由按钮消费 → 点菜单按钮不产生鼠标报告；
- * - 非按钮区域由本容器 [onTouchEvent] 消费（返回 true）→ 点菜单空隙同样不穿透。
+ * Area event consumption (M2 acceptance key): every touch inside the key bar bounds is consumed and never reaches the
+ * touch gesture layer —
+ * - buttons are individually clickable, DOWN is consumed by the button → tapping a menu button produces no mouse report;
+ * - non-button areas are consumed by this container's [onTouchEvent] (returns true) → tapping the menu gaps also does not penetrate.
  *
- * 展开期间栏外仍是触控板：本容器只消费自己边界内的事件，栏外触摸正常进入触控层。
+ * Outside the bar, while expanded, it is still a touchpad: this container only consumes events within its own bounds;
+ * touches outside the bar reach the touch layer normally.
  */
 class KeyBarPanel @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : LinearLayout(context, attrs) {
 
-    /** 非按钮区域触摸被消费的回调（MainActivity 用它重置自动隐藏计时，DESIGN §3.4） */
+    /** Callback invoked when a touch on a non-button area is consumed (MainActivity uses it to reset the auto-hide timer, DESIGN §3.4) */
     var onAreaTouch: (() -> Unit)? = null
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             onAreaTouch?.invoke()
         }
-        return true // 消费按键栏区域内的所有触摸（按钮由子 View 先行消费）
+        return true // Consume all touches in the key bar area (buttons consume them first as child views)
     }
 }

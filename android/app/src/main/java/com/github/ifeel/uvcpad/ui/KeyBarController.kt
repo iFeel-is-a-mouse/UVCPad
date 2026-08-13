@@ -5,13 +5,13 @@ import android.os.Looper
 import android.view.View
 
 /**
- * 按键栏显隐控制（DESIGN §3.4 新建；显隐/防竞态改造自 hdmi2mp showToolbar/hideToolbar/hideGeneration）：
- * - [show]：滑出 + 重置自动隐藏计时（hideGeneration++ 使进行中的隐藏动画失效）；
- * - [hide]：滑回 + 动画结束置 GONE（generation 校验：动画期间被 show 打断则保持可见）；
- * - [resetAutoHideTimer]：任意触摸（三角/按键栏/触控层）调用，重置 [autoHideMs] 计时；
- * - [destroy]：onDestroy 时清除计时器与动画，避免 Handler 泄漏。
+ * Key bar show/hide control (new in DESIGN §3.4; show/hide and race prevention adapted from hdmi2mp showToolbar/hideToolbar/hideGeneration):
+ * - [show]: slide in + reset the auto-hide timer (hideGeneration++ invalidates any in-flight hide animation);
+ * - [hide]: slide back + set GONE when the animation ends (generation check: stays visible if show interrupts during the animation);
+ * - [resetAutoHideTimer]: called on any touch (triangle/key bar/touch layer), resets the [autoHideMs] timer;
+ * - [destroy]: clears the timer and animations on onDestroy to avoid Handler leaks.
  *
- * 初始状态：按键栏 GONE（布局里 visibility="gone"），只有三角常驻；首次 show 从顶边之上滑入。
+ * Initial state: key bar GONE (visibility="gone" in the layout), only the triangle is always visible; the first show slides in from above the top edge.
  */
 class KeyBarController(
     private val panel: View,
@@ -24,13 +24,13 @@ class KeyBarController(
 
     val isVisible: Boolean get() = visible
 
-    /** 展开按键栏并重置自动隐藏计时；已在展开状态时仅重置计时（幂等，hdmi2mp 模式） */
+    /** Expands the key bar and resets the auto-hide timer; when already expanded it only resets the timer (idempotent, hdmi2mp pattern) */
     fun show() {
         hideGeneration++
         mainHandler.removeCallbacks(hideRunnable)
         if (panel.visibility != View.VISIBLE) {
             panel.visibility = View.VISIBLE
-            // 首次展开：从顶边之上滑入（hide() 之后 translationY 已是 -height，无需再设）
+            // First expansion: slide in from above the top edge (translationY is already -height after hide(), no need to set it again)
             if (panel.translationY == 0f) {
                 panel.translationY = -panel.height.toFloat()
             }
@@ -45,7 +45,7 @@ class KeyBarController(
         resetAutoHideTimer()
     }
 
-    /** 收起按键栏：滑回顶边之上，动画结束置 GONE（期间被 show 打断则保持可见） */
+    /** Collapses the key bar: slides back above the top edge, sets GONE when the animation ends (stays visible if show interrupts during the animation) */
     fun hide() {
         if (!visible || panel.visibility != View.VISIBLE) return
         visible = false
@@ -57,7 +57,7 @@ class KeyBarController(
             .translationY(-panel.height.toFloat())
             .setDuration(FADE_OUT_MS)
             .withEndAction {
-                // 竞态防护：动画期间用户再次展开（generation 变化）→ 保持可见
+                // Race protection: user expands again during the animation (generation changed) → keep visible
                 if (hideGeneration == gen && panel.visibility == View.VISIBLE) {
                     panel.visibility = View.GONE
                 }
@@ -65,19 +65,19 @@ class KeyBarController(
             .start()
     }
 
-    /** 三角点击入口：未展开→展开；已展开→收起（DESIGN §3.3） */
+    /** Triangle tap entry: collapsed→expand; expanded→collapse (DESIGN §3.3) */
     fun toggle() {
         if (visible) hide() else show()
     }
 
-    /** 任意触摸重置自动隐藏计时（DESIGN §3.4："任意触摸都重置计时"，与 hdmi2mp 一致） */
+    /** Any touch resets the auto-hide timer (DESIGN §3.4: "any touch resets the timer", consistent with hdmi2mp) */
     fun resetAutoHideTimer() {
         if (!visible) return
         mainHandler.removeCallbacks(hideRunnable)
         mainHandler.postDelayed(hideRunnable, autoHideMs)
     }
 
-    /** Activity onDestroy 调用：清除计时器与动画（hdmi2mp: removeCallbacksAndMessages） */
+    /** Called from Activity onDestroy: clears the timer and animations (hdmi2mp: removeCallbacksAndMessages) */
     fun destroy() {
         mainHandler.removeCallbacksAndMessages(null)
         panel.animate().cancel()
