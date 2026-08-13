@@ -3,6 +3,8 @@
     <!-- [uvcpad-keybar-font] Unified key-bar button style: height driven by wrap_content + consistent font size / line height
          (same font size → same line height → buttons naturally equal height), no longer fixed at 40dp.
          Font size is not put into the style — all 6 buttons use 14sp in the layout.
+         [uvcpad-keybar-height] Height +25% via vertical padding (2dp top + 2dp bottom ≈ +4dp on Roboto 14sp line height ≈16.8dp),
+         NOT by enlarging font size (text must stay 14sp). gravity="center" keeps the text vertically centered.
          singleLine: overlong Bluetooth device names are truncated to a single line (paired with the button's own ellipsize="end"). -->
     <style name="KeyBarButton">
         <item name="android:layout_height">wrap_content</item>
@@ -11,6 +13,8 @@
         <item name="android:clickable">true</item>
         <item name="android:paddingStart">10dp</item>
         <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
         <item name="android:textColor">@color/white</item>
         <item name="android:singleLine">true</item>
     </style>
