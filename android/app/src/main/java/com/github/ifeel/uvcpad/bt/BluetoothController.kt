@@ -65,7 +65,8 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     var statusListener: ((String) -> Unit)? = null
 
     private fun updateStatus(msg: String) {
-        Log.i(TAG, "Status: $msg")
+        // [uvcpad-consistency-p3] 状态消息频率高（连接/断开/注册/发现等均触发，且同步走 toast）→ Log.d
+        Log.d(TAG, "Status: $msg")
         statusListener?.invoke(msg)
     }
 
@@ -81,6 +82,9 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     /** [uvcpad-last-device] 连接成功回调：MainActivity 用它把最近连接设备持久化到 prefs */
     var lastDeviceConnectedListener: ((BluetoothDevice) -> Unit)? = null
 
+    /** [uvcpad-consistency-p2] 记忆地址判定失效（已不在已配对列表）回调：MainActivity 用它清除 prefs 持久记忆 */
+    var lastDeviceAddressRemovedListener: (() -> Unit)? = null
+
     /** List of paired devices for device switching */
     val pairedDevices = mutableListOf<BluetoothDevice>()
     var targetSwitchDevice: BluetoothDevice? = null
@@ -89,8 +93,14 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     private var reconnectHandler: Handler? = null
     private val RECONNECT_INTERVAL_MS = 5000L
 
+    /** [uvcpad-consistency-p3] getProfileProxy 无回调时的 initInProgress 强制复位超时 */
+    private val INIT_TIMEOUT_MS = 3000L
+
     /** [uvcpad-fix-p2] getProfileProxy 已发出未返回时短路重复 init（首启 onStart+onResume 双调） */
     private var initInProgress = false
+
+    /** [uvcpad-consistency-p3] getProfileProxy 理论挂起兜底：3s 无回调强制复位 initInProgress（防永久短路后续 init） */
+    private var initTimeoutHandler: Handler? = null
 
     /** [uvcpad-fix-p2] 供权限检查使用的 applicationContext（init 时注入，不持有 Activity） */
     private var appContext: Context? = null
@@ -107,6 +117,10 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     /** [uvcpad-fix-p2] S8 切换设备 connect 失败的单次重试标记 */
     private var switchRetryScheduled = false
 
+    /** [uvcpad-consistency-p2] S8 切换重试 Handler/Runnable（存字段以便 switchTo 取消：3s 内再切设备不被旧重试覆盖） */
+    private var switchRetryHandler: Handler? = null
+    private var switchRetryRunnable: Runnable? = null
+
     private var deviceListener: ((BluetoothHidDevice, BluetoothDevice)->Unit)? = null
     private var disconnectListener: (()->Unit)? = null
 
@@ -114,12 +128,35 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
      * [uvcpad-last-device] 自动连接的目标设备：优先最近成功连接过的设备（lastDeviceAddress，
      * 多设备场景下系统 onAppStatusChanged 可能总返回最早配对的设备 → 总连错设备）；
      * 无记忆或地址非法时回退系统回调的 mpluggedDevice。返回 null 表示当前无可自动连接目标。
+     *
+     * [uvcpad-consistency-p2] 记忆地址必须仍在已配对列表（bondedDevices）里才返回：
+     * 换设备/重新配对后旧地址已不在已配对列表，而 getRemoteDevice 不校验配对状态仍会返回对象
+     * → 5s 无限重连死设备、永不回退默认设备（P2-2 空转）。不在列表 → 清空记忆（内存+prefs）回退
+     * mpluggedDevice；无权限读取已配对列表时保守返回记忆地址（维持旧行为，避免误清记忆）。
      */
     fun resolveAutoConnectTarget(): BluetoothDevice? {
         val lastAddr = lastDeviceAddress
         if (!lastAddr.isNullOrEmpty()) {
             try {
-                return btAdapter.getRemoteDevice(lastAddr)
+                val bonded = try {
+                    btAdapter.bondedDevices
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "bondedDevices blocked: no BLUETOOTH_CONNECT", e)
+                    null
+                }
+                val remembered = bonded?.firstOrNull { it.address == lastAddr }
+                if (remembered != null) {
+                    return remembered
+                }
+                if (bonded != null) {
+                    // 已配对列表可读且不含记忆地址：旧设备已删除/重新配对 → 清空记忆（内存+prefs），回退默认设备
+                    Log.w(TAG, "Last device $lastAddr no longer bonded, clearing last-device memory")
+                    lastDeviceAddress = null
+                    lastDeviceAddressRemovedListener?.invoke()
+                } else {
+                    // 权限缺失无法校验：保守返回记忆地址，避免误清记忆
+                    return btAdapter.getRemoteDevice(lastAddr)
+                }
             } catch (e: IllegalArgumentException) {
                 Log.w(TAG, "Invalid last device address: $lastAddr, falling back to plugged device")
             }
@@ -161,7 +198,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     return
                 }
                 // Still disconnected, try reconnect
-                Log.i(TAG, "Auto-reconnect attempt to ${deviceName(device)}")
+                Log.d(TAG, "Auto-reconnect attempt to ${deviceName(device)}")
                 tryConnect(device)
                 reconnectHandler?.postDelayed(this, RECONNECT_INTERVAL_MS)
             }
@@ -200,11 +237,23 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         }
         if (btHid != null) return
         initInProgress = true
+        // [uvcpad-consistency-p3] 理论挂起兜底：getProfileProxy 理论上可能永不回调
+        // （onServiceConnected/onServiceDisconnected 均不触发）→ initInProgress 永久 true 短路
+        // 所有后续 init（唯一恢复手段是重启）。3s 后强制复位标志；正常回调路径显式取消定时任务。
+        initTimeoutHandler?.removeCallbacksAndMessages(null)
+        initTimeoutHandler = Handler(Looper.getMainLooper())
+        initTimeoutHandler?.postDelayed({
+            if (initInProgress) {
+                initInProgress = false
+                Log.w(TAG, "getProfileProxy timed out, resetting initInProgress")
+            }
+        }, INIT_TIMEOUT_MS)
         appContext = ctx.applicationContext
         try {
             btAdapter.getProfileProxy(ctx.applicationContext, this, BluetoothProfile.HID_DEVICE)
         } catch (e: Throwable) {
             initInProgress = false
+            initTimeoutHandler?.removeCallbacksAndMessages(null)
             Log.e(TAG, "getProfileProxy failed", e)
             updateStatus("BT init failed: ${e.message}")
         }
@@ -235,6 +284,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
             Log.e(TAG, "Service disconnected!")
             if (profile == BluetoothProfile.HID_DEVICE) {
                 initInProgress = false
+                initTimeoutHandler?.removeCallbacksAndMessages(null)
                 btHid = null
                 // [uvcpad-p2-retry-cleanup] 复位 registerApp 重试标记 + 取消 pending 3s 重试：
                 // 否则残留 Runnable 持有旧 proxy，3s 后重试失败置 btHid=null，误伤重连后的新 proxy
@@ -264,6 +314,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 return
             }
             initInProgress = false
+            initTimeoutHandler?.removeCallbacksAndMessages(null)
 
             val btHid = proxy as? BluetoothHidDevice
             if (btHid == null) {
@@ -344,7 +395,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
         try {
             super.onConnectionStateChanged(device, state)
-            Log.i(TAG, "Connection state ${when(state) {
+            Log.d(TAG, "Connection state ${when(state) {
                 BluetoothProfile.STATE_CONNECTING -> "CONNECTING"
                 BluetoothProfile.STATE_CONNECTED -> "CONNECTED"
                 BluetoothProfile.STATE_DISCONNECTING -> "DISCONNECTING"
@@ -368,7 +419,10 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                         }
                     }
 
-                    deviceListener?.invoke(btHid!!, device)
+                    deviceListener?.let { listener ->
+                        // [uvcpad-consistency-p3] btHid 可能瞬间置空（服务断开竞态）：非空断言会 NPE，改安全解包
+                        btHid?.let { hid -> listener.invoke(hid, device) }
+                    }
                     updateStatus("Connected: ${deviceName(device)}")
 
                     //deviceListener = null
@@ -380,7 +434,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 val toSwitch = targetSwitchDevice
                 if (toSwitch != null) {
                     targetSwitchDevice = null
-                    Log.i(TAG, "Switching to device: ${deviceName(toSwitch)}")
+                    Log.d(TAG, "Switching to device: ${deviceName(toSwitch)}")
                     updateStatus("Switching...")
                     // [uvcpad-fix-p2] S8：切换目标 connect 失败 3s 后单次重试（autoPair off 时不再卡死）
                     tryConnectWithRetry(toSwitch)
@@ -389,7 +443,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     updateStatus("Disconnected, waiting...")
                     // [uvcpad-fix-p1] 手动断开后不自动重连
                     if (autoPairFlag && !manualDisconnectFlag && mpluggedDevice != null) {
-                        Log.i(TAG, "Device disconnected, starting auto-reconnect loop")
+                        Log.d(TAG, "Device disconnected, starting auto-reconnect loop")
                         startAutoReconnect()
                     }
                 }
@@ -403,7 +457,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
         try {
             super.onAppStatusChanged(pluggedDevice, registered)
-            Log.i(TAG, "onAppStatusChanged: registered=$registered, device=$pluggedDevice")
+            Log.d(TAG, "onAppStatusChanged: registered=$registered, device=$pluggedDevice")
             
             if (registered) {
                 mpluggedDevice = pluggedDevice
@@ -423,12 +477,12 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                         val target = resolveAutoConnectTarget()
                         if (target != null) {
                             tryConnect(target)
-                            Log.i(TAG, "Auto-connecting to device: ${deviceName(target)}")
+                            Log.d(TAG, "Auto-connecting to device: ${deviceName(target)}")
                         } else {
                             Log.w(TAG, "onAppStatusChanged: no auto-connect target")
                         }
                     } else {
-                        Log.i(TAG, "onAppStatusChanged: manual disconnect active, skip auto-connect")
+                        Log.d(TAG, "onAppStatusChanged: manual disconnect active, skip auto-connect")
                     }
                 }
             } else {
@@ -436,7 +490,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 btHid?.let { hid ->
                     try {
                         hid.registerApp(sdpRecord, null, qosOut, { it.run() }, this)
-                        Log.i(TAG, "Re-register attempt sent")
+                        Log.d(TAG, "Re-register attempt sent")
                     } catch (e: Throwable) {
                         Log.e(TAG, "Re-register failed", e)
                         updateStatus("HID re-register failed: ${e.message}")
@@ -477,6 +531,11 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
      */
     fun switchTo(device: BluetoothDevice) {
         Log.i(TAG, "switchTo: requested switch to ${deviceName(device)}")
+        // [uvcpad-consistency-p2] 新切换意图立即作废旧切换的 3s 重试：
+        // 否则旧 Runnable 3s 后连回旧设备，覆盖用户新选择（switchTo 后 3s 内再切场景）
+        switchRetryScheduled = false
+        switchRetryHandler?.removeCallbacksAndMessages(null)
+        switchRetryRunnable = null
         if (device.address == hostDevice?.address) {
             Log.i(TAG, "switchTo: already connected to ${deviceName(device)}, skipping")
             return
@@ -562,6 +621,8 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     /**
      * [uvcpad-fix-p2] S8 切换设备专用 connect：失败 3s 后单次重试
      * （autoPair off 时切换失败不再卡死；autoPair on 时重连循环本就覆盖）。
+     * [uvcpad-consistency-p2] 重试 Runnable 存字段（原匿名 postDelayed 无法取消）：
+     * switchTo 开头 removeCallbacks 取消旧重试，3s 内再切设备不被旧重试覆盖。
      */
     private fun tryConnectWithRetry(device: BluetoothDevice?) {
         if (device == null || !hasConnectPermission()) return
@@ -574,14 +635,20 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         if (!ok && !switchRetryScheduled) {
             switchRetryScheduled = true
             Log.w(TAG, "connect to ${deviceName(device)} failed, retrying in 3s")
-            Handler(Looper.getMainLooper()).postDelayed({
-                switchRetryScheduled = false
-                try {
-                    btHid?.connect(device)
-                } catch (e: SecurityException) {
-                    Log.e(TAG, "connect retry blocked: no BLUETOOTH_CONNECT", e)
+            switchRetryHandler?.removeCallbacksAndMessages(null)
+            switchRetryHandler = Handler(Looper.getMainLooper())
+            switchRetryRunnable = object : Runnable {
+                override fun run() {
+                    switchRetryScheduled = false
+                    switchRetryRunnable = null
+                    try {
+                        btHid?.connect(device)
+                    } catch (e: SecurityException) {
+                        Log.e(TAG, "connect retry blocked: no BLUETOOTH_CONNECT", e)
+                    }
                 }
-            }, 3000L)
+            }
+            switchRetryRunnable?.let { switchRetryHandler?.postDelayed(it, 3000L) }
         }
     }
 
