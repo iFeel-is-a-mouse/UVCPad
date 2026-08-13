@@ -6,6 +6,7 @@
     <string name="status_waiting">Waiting for USB capture card…</string>
     <string name="status_opened">Connected: %1$s</string>
     <string name="status_error">Error: %1$s</string>
+    <string name="status_capture_card_disconnected">Capture card disconnected — check the USB connection</string>
     <string name="status_mode_fallback">Switch to %1$s failed: unsupported resolution, using %2$s</string>
     <string name="status_mode_pending">Set to %1$s — applies when the capture card is connected</string>
     <string name="capture_saved">Screenshot saved: %1$s</string>

@@ -262,6 +262,11 @@ class MainActivity : CameraActivity() {
         BluetoothController.lastDeviceConnectedListener = { device ->
             prefs.lastDeviceAddress = device.address
         }
+        // [uvcpad-consistency-p2] 记忆地址失效（已解绑/重新配对，resolveAutoConnectTarget 判定）
+        // 时同步清除 prefs 持久记忆，避免下次启动重新注入死设备地址
+        BluetoothController.lastDeviceAddressRemovedListener = {
+            prefs.lastDeviceAddress = null
+        }
         // Screen always-on (default ON, same behavior as hdmi2mp)
         if (prefs.screenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -338,6 +343,9 @@ class MainActivity : CameraActivity() {
     override fun onStop() {
         super.onStop()
         wasInBackground = true
+        // [uvcpad-consistency-p3] 后台化时丢弃进行中的切换意图：旋转/重建/回前台后 targetSwitchDevice
+        // 残留会在 onConnectionStateChanged 分支里对旧设备发起连接（switchTo 后 3s 内切后台场景）
+        BluetoothController.targetSwitchDevice = null
     }
 
     override fun onDestroy() {
@@ -348,6 +356,8 @@ class MainActivity : CameraActivity() {
         BluetoothController.clearListeners()
         // [uvcpad-last-device] 清理连接成功回调：避免单例持有已销毁 Activity 引用
         BluetoothController.lastDeviceConnectedListener = null
+        // [uvcpad-consistency-p2] 清理记忆失效回调（同上，防引用泄漏）
+        BluetoothController.lastDeviceAddressRemovedListener = null
         // [uvcpad-fix-p2] C1：清理 USB 提示超时重置任务
         usbHintHandler.removeCallbacksAndMessages(null)
         // M2: 清除按键栏自动隐藏计时器与动画（hdmi2mp: removeCallbacksAndMessages 模式）
@@ -485,7 +495,13 @@ class MainActivity : CameraActivity() {
                         clearError()
                     }
                     ICameraStateCallBack.State.CLOSED -> {
-                        // No statusText in M1; nothing to render on close
+                        // [uvcpad-consistency-p3] 拔卡提示：CLOSED 且无进行中的分辨率切换请求
+                        // （pending 已清空）= 采集卡拔出/异常关闭 → errorText 提示；分辨率切换路径
+                        // 的 CLOSED 是 closeCamera 的正常中间态（pending 非 0，随后 OPENED 会 clearError），
+                        // 不提示避免误报"已断开"。AUSBC State 枚举无 DISCONNECTED，CLOSED 即唯一挂断信号。
+                        if (pendingModeW == 0 && pendingModeH == 0) {
+                            showError(getString(R.string.status_capture_card_disconnected))
+                        }
                     }
                     ICameraStateCallBack.State.ERROR -> {
                         // 切换失败/相机异常：清掉进行中的切换请求，避免残留 pending
@@ -714,6 +730,15 @@ class MainActivity : CameraActivity() {
                 updateBtButton()
                 toast(getString(R.string.keybar_bt_disconnected))
             } else {
+                // [uvcpad-consistency-p2] 服务未连接/注册失败态（btHid==null）：点击 = 用户重新连接意图，
+                // 重新走 init 链（getProfileProxy → registerApp），而非只 toast——否则"tap BT to retry"
+                // 提示后唯一恢复手段是切后台/重启（P2-1）
+                if (BluetoothController.btHid == null) {
+                    BluetoothController.manualDisconnectFlag = false
+                    initBluetooth()
+                    toast(getString(R.string.keybar_bt_connecting))
+                    return@setOnClickListener
+                }
                 // Disconnected → try connect to the previously paired device
                 BluetoothController.mpluggedDevice?.let { device ->
                     if (btConnectionState(device) ==
@@ -835,14 +860,15 @@ class MainActivity : CameraActivity() {
     private fun showDeviceSwitcher() {
         if (!::btnBt.isInitialized) return
         val popup = PopupMenu(this, btnBt, Gravity.START)
-        // [uvcpad-fix-p3] pairedDevices 为空时用系统已配对列表兜底填充
-        // [uvcpad-fix-p2] S+ getBondedDevices 需要 BLUETOOTH_CONNECT：异常时降级为空列表
-        val devices = BluetoothController.pairedDevices.toList().ifEmpty {
-            try {
-                BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList() ?: emptyList()
-            } catch (e: SecurityException) {
-                emptyList()
-            }
+        // [uvcpad-consistency-p3] 已配对列表（bondedDevices）为准，pairedDevices 仅作兜底：
+        // 运行期缓存可能含已解绑设备（解绑后永不清理），以系统当前已配对列表为准可避免弹窗
+        // 出现死设备条目；无权限读取时降级用运行期缓存（[uvcpad-fix-p3] 空列表兜底语义保留）
+        val devices = try {
+            BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList()?.ifEmpty {
+                BluetoothController.pairedDevices.toList()
+            } ?: BluetoothController.pairedDevices.toList()
+        } catch (e: SecurityException) {
+            BluetoothController.pairedDevices.toList()
         }
         val currentHost = BluetoothController.hostDevice
 
