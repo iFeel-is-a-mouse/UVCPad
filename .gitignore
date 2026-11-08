@@ -1,0 +1,19 @@
+# --- 派生物（可重建，不入 git）见 AGENTS.md ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+node_modules/
+.coverage
+coverage/
+htmlcov/
+.DS_Store
+
+# Gradle / Android / JVM 构建输出
+build/
+.gradle/
+local.properties
+*.apk
+*.aar

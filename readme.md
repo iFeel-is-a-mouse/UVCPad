@@ -10,7 +10,7 @@ uvcpad merges two battle-tested projects into a single app: a USB UVC capture ca
 
 See and touch on the same screen — the video shows through, and the touch layer never blocks the view. **Touch only. No keyboard. No drivers.**
 
-> Current version v0.2.10 (2026-08-13). M1 skeleton integration and the M2 interaction entry (drop triangle + auto-hiding key bar) are complete; on-device verification is in progress.
+> Current version v0.2.11 (2026-11-09). On-device testing passed (display + Bluetooth HID touch). First public APK release.
 
 ## Features
 
