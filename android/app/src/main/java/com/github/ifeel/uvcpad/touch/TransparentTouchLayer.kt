@@ -2,6 +2,7 @@ package com.github.ifeel.uvcpad.touch
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -33,6 +34,16 @@ class TransparentTouchLayer @JvmOverloads constructor(
 
     /** Gesture engine; null = not connected/disconnected, touches produce no reports */
     private var gestureListener: ViewListener? = null
+
+    /**
+     * [uvcpad-rotate] Current display rotation in degrees (0/90/180/270), kept in sync with the camera frame rotation.
+     * Non-zero makes [onTouchEvent] rotate the touch coordinates back into the unrotated frame before the gesture
+     * engine sees them, so swipe directions still match what the user sees on screen.
+     */
+    var displayRotationDegrees: Int = 0
+
+    /** Reusable matrix for the per-event coordinate rotation (avoids an allocation per MOVE) */
+    private val rotateMatrix = Matrix()
 
     /**
      * Any-touch callback (M2, DESIGN §3.4 "any touch (triangle/key bar/touch layer) resets the timer"):
@@ -82,6 +93,28 @@ class TransparentTouchLayer @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         onAnyTouch?.invoke()
         val listener = gestureListener ?: return false
-        return listener.onTouch(this, event)
+        val degrees = ((displayRotationDegrees % 360) + 360) % 360
+        if (degrees == 0) {
+            return listener.onTouch(this, event)
+        }
+        // [uvcpad-rotate] Rotate the event coordinates back into the unrotated frame (DESIGN §3.4).
+        // AUSBC's RotateType.ANGLE_90 is a +90° rotation applied in clip space (y-up), which appears as a 90°
+        // COUNTER-clockwise turn on screen. Recovering the original point is therefore the inverse turn, i.e.
+        // Matrix.setRotate(+degrees) (Android angles are clockwise because y grows downwards):
+        //   90°  → setRotate(+90): displayed delta (dx,dy) becomes (-dy,dx)  (displayed right = original down)
+        //   180° → setRotate(+180): deltas negate
+        //   270° → setRotate(-90): displayed delta becomes (dy,-dx)
+        // MotionEvent.transform applies the matrix to every pointer (including historical samples), which keeps
+        // multi-finger scroll/pinch deltas consistent automatically. The original event is untouched → Android's
+        // ACTION_DOWN hit-test (event ownership / dispatch target) is unaffected; only the copy handed to the
+        // gesture engine carries rotated coordinates.
+        val rotated = MotionEvent.obtain(event)
+        rotateMatrix.setRotate(degrees.toFloat(), width / 2f, height / 2f)
+        rotated.transform(rotateMatrix)
+        return try {
+            listener.onTouch(this, rotated)
+        } finally {
+            rotated.recycle()
+        }
     }
 }

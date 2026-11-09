@@ -43,6 +43,7 @@ import com.github.ifeel.uvcpad.touch.TransparentTouchLayer
 import com.github.ifeel.uvcpad.ui.DropTriangleView
 import com.github.ifeel.uvcpad.ui.KeyBarController
 import com.github.ifeel.uvcpad.ui.KeyBarPanel
+import com.github.ifeel.uvcpad.ui.RotatableAspectRatioTextureView
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.base.CameraActivity
 import com.jiangdg.ausbc.camera.bean.CameraRequest
@@ -50,7 +51,6 @@ import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.ICaptureCallBack
 import com.jiangdg.ausbc.render.env.RotateType
 import com.jiangdg.ausbc.utils.MediaStoreUtils
-import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.ausbc.widget.IAspectRatio
 import java.io.File
 import java.text.SimpleDateFormat
@@ -93,6 +93,9 @@ class MainActivity : CameraActivity() {
         private const val MODE_4BY3_W = 1872
         private const val MODE_4BY3_H = 1404
         private const val TAG = "MainActivity"
+        // [uvcpad-rotate] Delay between closeCamera() and the reopen after a rotation change: same 1s gap AUSBC uses
+        // internally in ICamera.updateResolution (the UVC pipeline needs the session fully closed before reopening).
+        private const val ROTATE_REOPEN_DELAY_MS = 1000L
         // State save keys (keep the selected resolution mode across config changes / process recreation)
         private const val KEY_MODE_W = "key_mode_w"
         private const val KEY_MODE_H = "key_mode_h"
@@ -127,8 +130,41 @@ class MainActivity : CameraActivity() {
     private lateinit var btnBt: TextView
     private lateinit var btnAutoPair: TextView
     private lateinit var btnMode: TextView
+    private lateinit var btnRotate: TextView
     private lateinit var btnCapture: TextView
     private lateinit var btnExit: TextView
+
+    // ============ [uvcpad-rotate] Explicit rotation button (DESIGN §3.4) ============
+    /** Camera view created in [getCameraView] (rotation-aware aspect ratio, see [RotatableAspectRatioTextureView]) */
+    private var cameraView: RotatableAspectRatioTextureView? = null
+
+    /** Display rotation enum 0..3 (= 0/90/180/270 degrees), persisted in prefs.rotationType */
+    private var rotationType = 0
+
+    /** True between closeCamera() and the delayed reopen of a rotate-triggered session restart (suppresses the reopen toast) */
+    private var rotationReopenInFlight = false
+
+    /** [uvcpad-rotate] Delayed reopen that applies the new rotation (removed on onDestroy) */
+    private val rotateReopenHandler = Handler(Looper.getMainLooper())
+    private val rotateReopenRunnable = Runnable {
+        if (isFinishing || isDestroyed) {
+            rotationReopenInFlight = false
+            return@Runnable
+        }
+        try {
+            // CameraActivity.openCamera(view) → ICamera.openCamera(view, getCameraRequest()); the request built by
+            // getCameraRequest() already carries the new RotateType, so the fresh render session starts rotated.
+            cameraView?.let { openCamera(it) }
+        } catch (e: Exception) {
+            // Defensive: never let a reopen failure escape silently
+            rotationReopenInFlight = false
+            pendingModeW = 0
+            pendingModeH = 0
+            val msg = getString(R.string.status_error, e.message ?: e.javaClass.simpleName)
+            showError(msg)
+            toast(msg)
+        }
+    }
 
     /**
      * [uvcpad-touch-align] Layout sync: on every layout change (first layout / switchMode resolution switch / rotation rebuild)
@@ -229,6 +265,9 @@ class MainActivity : CameraActivity() {
         // Register the active Activity reference for the global crash self-capture (lets CrashHandler show the full-screen crash dialog)
         CrashHandler.setActiveActivity(this)
         prefs = UvcpadPrefs(this)
+        // [uvcpad-rotate] Restore the explicit rotation (0=0°/1=90°/2=180°/3=270°); the camera view already got it in
+        // getCameraView(), this keeps the field in sync for getCameraRequest()/the touch layer.
+        rotationType = prefs.rotationType
         // [uvcpad-resolution-mode] Startup restore: derive the preset request size from prefs.resolutionMode (the user-selected mode enum)
         // (4:3 → 1872×1404, 16:9 → 1920×1080). What is remembered is the user's choice, not the
         // hardware fallback result — memory stays unchanged after swapping hardware, and the next launch still requests the preset per the user's mode.
@@ -364,6 +403,9 @@ class MainActivity : CameraActivity() {
         BluetoothController.lastDeviceAddressRemovedListener = null
         // [uvcpad-fix-p2] C1: clear the USB-permission-hint timeout reset task
         usbHintHandler.removeCallbacksAndMessages(null)
+        // [uvcpad-rotate] Drop any queued rotate reopen so it never fires on a dead Activity
+        rotateReopenHandler.removeCallbacks(rotateReopenRunnable)
+        rotationReopenInFlight = false
         // M2: clear the key bar auto-hide timer and animations (hdmi2mp: removeCallbacksAndMessages pattern)
         if (::keyBarController.isInitialized) {
             keyBarController.destroy()
@@ -395,8 +437,17 @@ class MainActivity : CameraActivity() {
     }
 
     override fun getCameraView(): IAspectRatio? {
-        // Create the render view at runtime; CameraActivity adds it to the container automatically
-        return AspectRatioTextureView(this)
+        // [uvcpad-rotate] Rotation-aware equivalent of AspectRatioTextureView: same fit-inside measurement, but the
+        // aspect ratio is transposed while the frame is displayed at 90°/270° (AUSBC re-applies the raw preview ratio
+        // on every open, so the swap must live inside the view to survive session restarts).
+        // getCameraView() runs inside super.onCreate(), i.e. before this class's onCreate body initialises `prefs`,
+        // hence the local read (UvcpadPrefs is a thin stateless SharedPreferences wrapper).
+        val storedType = UvcpadPrefs(this).rotationType
+        rotationType = storedType
+        val view = RotatableAspectRatioTextureView(this)
+        view.rotationDegrees = rotationDegrees(storedType)
+        cameraView = view
+        return view
     }
 
     override fun getCameraViewContainer(): ViewGroup? {
@@ -416,7 +467,9 @@ class MainActivity : CameraActivity() {
             .setPreviewWidth(currentModeW)
             .setPreviewHeight(currentModeH)
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
-            .setDefaultRotateType(RotateType.ANGLE_0)
+            // [uvcpad-rotate] Rotation follows the explicit rotate button (prefs.rotationType); every (re)open
+            // re-applies it, so the frame is already rotated when the render session starts.
+            .setDefaultRotateType(rotateTypeOf(rotationType))
             // No audio needed
             .setAudioSource(CameraRequest.AudioSource.NONE)
             // MJPEG: high frame rate, low latency
@@ -492,7 +545,11 @@ class MainActivity : CameraActivity() {
                         }
                         // M1: no statusText view (M2 key bar hosts the persistent status);
                         // the opened state is surfaced as a toast
-                        toast(text)
+                        // [uvcpad-rotate] The OPENED of our own rotate-triggered reopen: same size, no toast
+                        if (!rotationReopenInFlight) {
+                            toast(text)
+                        }
+                        rotationReopenInFlight = false
                         // Opened successfully: clear any previous error/permission hints (including the USB guidance hint)
                         usbHintActive = false
                         usbHintHandler.removeCallbacksAndMessages(null)
@@ -508,6 +565,8 @@ class MainActivity : CameraActivity() {
                         }
                     }
                     ICameraStateCallBack.State.ERROR -> {
+                        // [uvcpad-rotate] A failed rotate-reopen must not leave the in-flight marker behind
+                        rotationReopenInFlight = false
                         // Switch failure/camera exception: clear the in-flight switch request to avoid a leftover pending
                         // falsely reporting a "fallback" on a later OPENED
                         pendingModeW = 0
@@ -547,8 +606,11 @@ class MainActivity : CameraActivity() {
         btnBt = findViewById(R.id.btnBt)
         btnAutoPair = findViewById(R.id.btnAutoPair)
         btnMode = findViewById(R.id.btnMode)
+        btnRotate = findViewById(R.id.btnRotate)
         btnCapture = findViewById(R.id.btnCapture)
         btnExit = findViewById(R.id.btnExit)
+        // [uvcpad-rotate] Touch coordinates are rotated back to the unrotated frame (see TransparentTouchLayer)
+        touchLayer.displayRotationDegrees = rotationDegrees(rotationType)
 
         // Triangle tap → key bar show/hide toggle (expanded→collapse; collapsing also resets the timer, DESIGN §3.3)
         dropTriangle.onToggle = { keyBarController.toggle() }
@@ -605,6 +667,82 @@ class MainActivity : CameraActivity() {
             // No card plugged in: do not trigger updateResolution (meaningless without an open camera); only lightly hint that the memory took effect and will apply once a card is plugged in
             toast(getString(R.string.status_mode_pending, "$width×$height"))
         }
+    }
+
+    // ============ [uvcpad-rotate] Explicit rotation (DESIGN §3.4) ============
+
+    /** prefs.rotationType (0..3) → display angle in degrees */
+    private fun rotationDegrees(type: Int): Int = (((type % 4) + 4) % 4) * 90
+
+    /** prefs.rotationType (0..3) → AUSBC render rotation */
+    private fun rotateTypeOf(type: Int): RotateType = when (((type % 4) + 4) % 4) {
+        1 -> RotateType.ANGLE_90
+        2 -> RotateType.ANGLE_180
+        3 -> RotateType.ANGLE_270
+        else -> RotateType.ANGLE_0
+    }
+
+    /** Rotation button label: "⟳" at 0°, "⟳90°" / "⟳180°" / "⟳270°" otherwise */
+    private fun updateRotateButton() {
+        if (!::btnRotate.isInitialized) return
+        btnRotate.text = if (rotationType == 0) {
+            getString(R.string.keybar_rotate)
+        } else {
+            getString(R.string.keybar_rotate_angle, rotationType * 90)
+        }
+    }
+
+    /**
+     * [uvcpad-rotate] Applies the current rotation: view aspect ratio first, then a session restart.
+     *
+     * AUSBC 3.6.0 does expose a runtime render rotation (`CameraClient/ICamera.setRotateType`, a GL MVP rotation),
+     * but NOT a runtime surface-size update: `RenderManager`/`CameraRender` capture the view's measured size when the
+     * session opens (`ICamera.handleMessage(MSG_INIT)` → `startRenderScreen(getSurfaceWidth(), getSurfaceHeight(), ...)`),
+     * and `ICamera.setRenderSize` only feeds the one-shot open future — a TextureView resize alone would leave the GL
+     * viewport at the old size. Since 90°/270° must also transpose the display rectangle (w/h swap), the renderer has
+     * to be rebuilt at the new size → same close/reopen pattern as `ICamera.updateResolution` (switchMode), which cannot
+     * be used here because it early-returns when the requested w/h are unchanged.
+     *
+     * Races handled:
+     * - CLOSED between close and reopen: pendingModeW/H are set (like switchMode) so the CLOSED handler does not report
+     *   a false "capture card disconnected"; the next OPENED clears them;
+     * - double tap while a reopen is in flight: the queued reopen is rescheduled and the latest rotationType is picked up
+     *   by getCameraRequest() at open time (no overlapping close/open pairs);
+     * - capture card unplugged / no camera: nothing to reopen — the rotation is persisted and applied on the next open;
+     * - screenshot in progress: isCameraOpened() turns false right after closeCamera(), captureJpg() degrades to the
+     *   existing "waiting" hint.
+     */
+    private fun applyRotation() {
+        val view = cameraView ?: return
+        view.rotationDegrees = rotationDegrees(rotationType)
+        if (::touchLayer.isInitialized) {
+            touchLayer.displayRotationDegrees = rotationDegrees(rotationType)
+        }
+        if (!isCameraOpened()) return
+        if (rotationReopenInFlight) {
+            // Already closed and waiting to reopen: only reschedule, so the latest rotation wins
+            rotateReopenHandler.removeCallbacks(rotateReopenRunnable)
+            rotateReopenHandler.postDelayed(rotateReopenRunnable, ROTATE_REOPEN_DELAY_MS)
+            return
+        }
+        rotationReopenInFlight = true
+        // Reuse the switchMode bookkeeping: a non-zero pending suppresses the CLOSED "unplugged" hint and is cleared
+        // by the following OPENED (which then skips its own toast because this is not a user resolution switch)
+        pendingModeW = currentModeW
+        pendingModeH = currentModeH
+        try {
+            closeCamera()
+        } catch (e: Exception) {
+            rotationReopenInFlight = false
+            pendingModeW = 0
+            pendingModeH = 0
+            val msg = getString(R.string.status_error, e.message ?: e.javaClass.simpleName)
+            showError(msg)
+            toast(msg)
+            return
+        }
+        rotateReopenHandler.removeCallbacks(rotateReopenRunnable)
+        rotateReopenHandler.postDelayed(rotateReopenRunnable, ROTATE_REOPEN_DELAY_MS)
     }
 
     /** Capture a screenshot of the UVC frame (kept from hdmi2mp verbatim; key-bar entry lands in M2) */
@@ -790,6 +928,17 @@ class MainActivity : CameraActivity() {
                 BluetoothController.stopAutoReconnect()
                 toast(getString(R.string.keybar_auto_pair_off))
             }
+        }
+
+        // --- Rotation ⟳ [uvcpad-rotate]: explicit button (no automatic orientation), cycles 0→90→180→270→0 ---
+        // Placed right after the resolution button by request; independent of the resolution/ratio logic.
+        updateRotateButton()
+        btnRotate.setOnClickListener {
+            keyBarController.resetAutoHideTimer()
+            rotationType = (rotationType + 1) % 4
+            prefs.rotationType = rotationType
+            updateRotateButton()
+            applyRotation()
         }
 
         // --- Resolution: 16:9 ↔ 4:3 (reuses switchMode; on failed rollback currentModeW/H stay unchanged → label unchanged) ---

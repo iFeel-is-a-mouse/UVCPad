@@ -22,6 +22,7 @@
 | v0.2.10 三维复核 | 2026-08-13 | 3 P2 + 9 P3 修复（死设备空转 / 重试覆盖 / 拔卡提示 / 日志降级），versionCode 3 |
 | 真机实测通过 | 2026-11-09 | 用户确认「已经实测可以用了」——显示链路 + 蓝牙 HID 触控链路在真实设备跑通 |
 | v0.2.11 公开发布 | 2026-11-09 | versionCode 4；GitHub Release 上传 arm64 APK（4.19 MB）；首个可安装公开版本 |
+| 显式旋转按钮 | 2026-11-09 | commit **见 git log [uvcpad-rotate]**：按键栏新增 ⟳ 按钮（0/90/180/270 循环，`prefs.rotation_type`）；90/270 宽高比交换 + 触摸坐标反旋转；AUSBC 无运行时 surface resize → closeCamera+reopen |
 
 ## 关键 commit 对照
 
@@ -33,6 +34,18 @@
 | 2bd498b | 触控区域 = 显示区域：触控层动态对齐 AspectRatioTextureView 显示矩形（方案 A） |
 | 6d36a24 | 触控对齐评审修复：P1 修正 DESIGN §3.2.1 时序描述；P2 getChildAt(0) 加 TextureView 类型防御；P3 注释布局循环 |
 | 25225c6 | M2 交互入口：平板主题图标 + 下拉三角 + 自动隐藏按键栏（详见下文「M2 交互入口落地」） |
+
+## 显式旋转按钮（2026-11-09，[uvcpad-rotate]）
+
+- **需求**：按键栏在「分辨率 16:9/4:3」右侧新增独立 ⟳ 按钮；不做自动横竖屏自适应，不与分辨率按钮合并。
+- **关键结论（AUSBC 3.6.0 反编译核实）**：有运行时旋转 API（`CameraClient/ICamera.setRotateType` → GL MVP 旋转），但没有
+  运行时 surface 尺寸更新路径（`RenderManager` 在会话打开时固定 viewport 尺寸；`ICamera.setRenderSize` 只服务打开时的一次性 future）。
+  90/270 必须交换视图宽高比，因此只能重建会话：`closeCamera()` + 1s 后 `openCamera(view)`（`updateResolution` 在 w/h 不变时会提前 return）。
+- **宽高比**：AUSBC 每次打开都用未旋转 preview 尺寸调 `IAspectRatio.setAspectRatio` → 新增 `RotatableAspectRatioTextureView`
+  （copy 上游 fit-inside 测量，90/270 内部交换 w/h），避免重开会话后被覆盖。
+- **触控**：`TransparentTouchLayer` 在 `displayRotationDegrees != 0` 时用 `MotionEvent.transform` 反旋转坐标（多指/历史采样全覆盖），
+  DOWN 事件归属不受影响。
+- **状态**：`prefs.rotation_type`（0..3，默认 0）持久化，启动读取并应用；构建 `:app:assembleDebug` 通过；真机手势方向/黑边位置待验。
 
 ## M0 需求冻结（2026-08-11）
 

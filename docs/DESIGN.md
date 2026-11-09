@@ -305,9 +305,29 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
   | 蓝牙状态/设备名 | 点击 → 连接/断开；长按或弹窗 → `showDeviceSwitcher()` 多设备切换（复制 SelectDeviceActivity）。**点击目标设备即记忆最近设备并落盘** [uvcpad-last-device-click]（6e8c7e8）：不等连接成功，连接失败也记住意图；连接成功回调另有一次回写（双保险） |
   | 自动配对 🔗 | 切换 `BluetoothController.autoPairFlag` + `startAutoReconnect/stopAutoReconnect` |
   | 分辨率（16:9 ↔ 4:3） | `switchMode(1920, 1080, MODE_16_9)` / `switchMode(1872, 1404, MODE_4_3)`（复制 hdmi2mp）。**记忆改模式枚举** [uvcpad-resolution-mode]（74d25a0）：点击写 `prefs.resolutionMode`（0=4:3/1=16:9），只记用户选择、不记硬件回退值；**档位按宽高比判断** [uvcpad-ratio-toggle]（d7de1b0）：1600×1200 等协商回退值归 4:3 档，16:9 档可再次请求 |
+  | 旋转 ⟳ [uvcpad-rotate] | 分辨率按钮右侧的**独立按钮**（不做自动横竖屏、不与分辨率合并）：点击循环 0→90→180→270→0，写 `prefs.rotation_type`（0..3，默认 0）；启动时读取 → `CameraRequest.setDefaultRotateType`（ANGLE_0/90/180/270）+ 相机视图按 90/270 交换宽高比；90/270 时触控层把坐标反旋转后再交给 ViewListener（详见下方「旋转实现」） |
   | 截图 📷 | `captureJpg()`（复制 hdmi2mp，含 MediaStore 导入） |
   | 退出 ⏻ | 清理 + finish |
   **不含任何键盘设置项**（Q2 ✅）。
+
+**旋转实现（[uvcpad-rotate]，2026-11-09）：**
+
+- **AUSBC 3.6.0 事实（javap 核实）**：`CameraRequest.Builder.setDefaultRotateType(RotateType)` 在 `ICamera.handleMessage(MSG_INIT)` 中
+  → `RenderManager.setRotateType` → `CameraRender.setRotateAngle`（MVP 矩阵旋转，纯 GL 旋转）。运行时 API
+  `CameraClient.setRotateType` / `ICamera.setRotateType` 存在，但**没有运行时 surface 尺寸更新路径**：
+  `startRenderScreen(getSurfaceWidth(), getSurfaceHeight(), …)` 在会话打开时取视图测量尺寸，`ICamera.setRenderSize`
+  只喂给打开时的一次性 future（`mSizeChangedFuture`），`CameraActivity.surfaceSizeChanged` 在打开后写完即失效 →
+  仅调 `setRotateType` 而不重建会话时，90/270 的宽高比交换会让 GL viewport 停留在旧尺寸（画面错位/黑边）。
+- **因此走会话重建**：`closeCamera()` → 1s 后 `openCamera(cameraView)`（与 `ICamera.updateResolution` 同节奏；
+  不能直接用 `updateResolution`——请求 w/h 不变时它会提前 return）。`pendingModeW/H` 暂存当前尺寸以复用 
+  switchMode 的 CLOSED/OPENED 记账（避免误报「采集卡断开」），OPENED 时跳过 toast。
+- **宽高比**：AUSBC 每次打开都会用**未旋转**的 preview 尺寸调 `IAspectRatio.setAspectRatio(w,h)`，故替换为
+  `RotatableAspectRatioTextureView`（copy 上游 fit-inside onMeasure，`setAspectRatio` 在 90/270 内部交换 w/h）——
+  保证重开会话后不会被覆盖回未交换值；`syncTouchLayerBounds` 逻辑不变（仍取相机视图布局 bounds）。
+- **触摸映射**：`TransparentTouchLayer.displayRotationDegrees` 非 0 时，用 `MotionEvent.obtain(event)` + 
+  `Matrix.setRotate(deg, w/2, h/2)` + `MotionEvent.transform` 把坐标转回未旋转坐标系（覆盖全部 pointer 与历史采样）：
+  90° → `(dx,dy)→(-dy,dx)`；180° → 取反；270° → `(dy,-dx)`。原始 event 不被修改，DOWN 的事件归属不受影响。
+  （AUSBC 的 ANGLE_90 是 clip space（y 轴向上）+90° 旋转，屏幕上看是**逆时针**，所以反算用 +90°；真机需复核方向）
 - **速度口径说明**：按下速度按钮后 `mouseSpeed`/`scrollSpeed` 被覆盖为 `SpeedLevel.mouse/scroll`（level 4 均为 1.0f），`ViewListener` 构造时默认 0.33f 仅在覆盖装配之前生效——与 §3.6 例 2 口径一致。
 - **区域消费**：panel 容器 `setOnTouchListener { _, _ -> true }` + 按钮各自 clickable → 落在按键栏边界内的所有触摸被消费，不进触控手势层（点菜单不会触发鼠标报告）。
 - 按键栏展开期间，**栏外区域仍是触控板**（两指滚动/移动照常，符合需求"只有菜单区优先消费"）。

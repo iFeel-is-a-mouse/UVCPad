@@ -28,6 +28,9 @@
     <string name="keybar_bt_switching">Switching to %1$s…</string>
     <string name="keybar_auto_pair_on">Auto-pair ON</string>
     <string name="keybar_auto_pair_off">Auto-pair OFF</string>
+    <!-- [uvcpad-rotate] Explicit rotation button label (⟳ + current angle) -->
+    <string name="keybar_rotate">⟳</string>
+    <string name="keybar_rotate_angle">⟳%1$d°</string>
     <string name="keybar_popup_connected">Connected: %1$s</string>
     <string name="keybar_popup_no_device">No device connected</string>
     <string name="keybar_popup_make_discoverable">📡 Make Discoverable</string>

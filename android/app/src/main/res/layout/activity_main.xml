@@ -99,6 +99,17 @@
                 android:text="16:9"
                 android:textSize="14sp" />
 
+            <!-- Rotation ⟳ [uvcpad-rotate]: independent button right of the resolution button; cycles 0→90→180→270→0;
+                 label shows the current angle (⟳ / ⟳90° / ⟳180° / ⟳270°); persisted in prefs rotation_type -->
+            <TextView
+                style="@style/KeyBarButton"
+                android:id="@+id/btnRotate"
+                android:layout_width="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:text="⟳"
+                android:textSize="14sp" />
+
             <!-- Screenshot 📷: captureJpg() (including MediaStore import) -->
             <TextView
                 style="@style/KeyBarButton"

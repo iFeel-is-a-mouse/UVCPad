@@ -97,6 +97,17 @@ class UvcpadPrefs(context: Context) {
             .apply()
     }
 
+    /**
+     * [uvcpad-rotate] Display rotation enum 0..3 (= 0/90/180/270 degrees, default 0).
+     * Written when the explicit rotate button cycles; read at startup and applied both to the camera request
+     * (AUSBC RotateType) and to the camera view's aspect ratio (90/270 transpose w/h).
+     */
+    var rotationType: Int
+        get() = prefs.getInt(KEY_ROTATION_TYPE, DEFAULT_ROTATION_TYPE)
+        set(value) {
+            prefs.edit().putInt(KEY_ROTATION_TYPE, value).apply()
+        }
+
     /** [uvcpad-last-device] Address of the most recently successfully connected Bluetooth device; null=no memory (first auto-connect falls back to mpluggedDevice) */
     var lastDeviceAddress: String?
         get() = prefs.getString(KEY_LAST_DEVICE_ADDRESS, null)
@@ -111,6 +122,8 @@ class UvcpadPrefs(context: Context) {
         const val KEY_SCREEN_ON = "screen_on"
         const val KEY_AUTO_HIDE_MS = "auto_hide_ms"
         const val KEY_RESOLUTION_MODE = "resolution_mode"
+        // [uvcpad-rotate] Display rotation enum: 0=0°, 1=90°, 2=180°, 3=270°
+        const val KEY_ROTATION_TYPE = "rotation_type"
         const val KEY_LAST_DEVICE_ADDRESS = "last_device_address"
 
         // [uvcpad-resolution-mode] Resolution mode enum: 0=4:3 (default), 1=16:9
@@ -121,6 +134,8 @@ class UvcpadPrefs(context: Context) {
         const val DEFAULT_AUTO_HIDE_MS = 4000L
         // Default on first launch is 4:3 (1872×1404), consistent with MainActivity.MODE_4BY3_W/H
         const val DEFAULT_RESOLUTION_MODE = MODE_4_3
+        // [uvcpad-rotate] Default rotation 0° (no change for existing users)
+        const val DEFAULT_ROTATION_TYPE = 0
 
         // Legacy width/height pair keys (migration only, no longer read/written):
         // [uvcpad-resolution-mode] Old keys are kept in constants for migrateResolutionMode() to detect/remove

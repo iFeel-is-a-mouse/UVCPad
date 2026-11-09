@@ -21,6 +21,12 @@
 
 ## M2 待办
 
+### 显式旋转按钮（✅ 编码完成 2026-11-09，真机待验）
+
+- [x] **[uvcpad-rotate]** 按键栏新增独立 `btnRotate`（分辨率按钮右侧，不改自动横竖屏）：点击循环 0→90→180→270→0，写 `prefs.rotation_type`（0..3，默认 0），启动恢复 → `CameraRequest.setDefaultRotateType` + 相机视图 90/270 交换宽高比；旋转走「closeCamera + 1s 后 reopen」（AUSBC 3.6.0 无运行时 surface 尺寸更新路径，javap 已核实）
+- [x] **[uvcpad-rotate]** 触摸映射：`TransparentTouchLayer` 用 `MotionEvent.transform(Matrix)` 把坐标反旋转回未旋转坐标系（90°→(-dy,dx) / 180°→取反 / 270°→(dy,-dx)），多指与历史采样自动覆盖，DOWN 事件归属不变
+- [ ] 真机验证四个角度的**手势方向一致性**与**旋转后黑边位置**（构建已通过，APK 待安装实测）
+
 ### 🔴 墨水屏适配：调研已完成 ✅，真机验证待用户
 
 - [x] **墨水屏适配调研（2026-08-12 → 08-13 完成）**，结论：
