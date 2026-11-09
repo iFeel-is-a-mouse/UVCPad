@@ -144,6 +144,16 @@ class MainActivity : CameraActivity() {
     /** True between closeCamera() and the delayed reopen of a rotate-triggered session restart (suppresses the reopen toast) */
     private var rotationReopenInFlight = false
 
+    /**
+     * [uvcpad-rotate-p1] True between the closeCamera() inside AUSBC's updateResolution() and its own 1s delayed reopen
+     * (resolution switch in flight). A rotate tap during this window is deferred: a second close/reopen pair would race
+     * the queued one, and AUSBC reopens from its stale mCameraRequest (old preview size AND old RotateType).
+     */
+    private var resolutionReopenInFlight = false
+
+    /** [uvcpad-rotate-p1] Rotate tap received while a resolution switch was in flight; applied on the next OPENED */
+    private var rotationPendingAfterResolution = false
+
     /** [uvcpad-rotate] Delayed reopen that applies the new rotation (removed on onDestroy) */
     private val rotateReopenHandler = Handler(Looper.getMainLooper())
     private val rotateReopenRunnable = Runnable {
@@ -267,7 +277,8 @@ class MainActivity : CameraActivity() {
         prefs = UvcpadPrefs(this)
         // [uvcpad-rotate] Restore the explicit rotation (0=0°/1=90°/2=180°/3=270°); the camera view already got it in
         // getCameraView(), this keeps the field in sync for getCameraRequest()/the touch layer.
-        rotationType = prefs.rotationType
+        // [uvcpad-rotate-p1] Normalise the persisted value (corrupt/legacy prefs may hold -1 or 7): map onto 0..3
+        rotationType = ((prefs.rotationType % 4) + 4) % 4
         // [uvcpad-resolution-mode] Startup restore: derive the preset request size from prefs.resolutionMode (the user-selected mode enum)
         // (4:3 → 1872×1404, 16:9 → 1920×1080). What is remembered is the user's choice, not the
         // hardware fallback result — memory stays unchanged after swapping hardware, and the next launch still requests the preset per the user's mode.
@@ -406,6 +417,8 @@ class MainActivity : CameraActivity() {
         // [uvcpad-rotate] Drop any queued rotate reopen so it never fires on a dead Activity
         rotateReopenHandler.removeCallbacks(rotateReopenRunnable)
         rotationReopenInFlight = false
+        resolutionReopenInFlight = false
+        rotationPendingAfterResolution = false
         // M2: clear the key bar auto-hide timer and animations (hdmi2mp: removeCallbacksAndMessages pattern)
         if (::keyBarController.isInitialized) {
             keyBarController.destroy()
@@ -442,7 +455,7 @@ class MainActivity : CameraActivity() {
         // on every open, so the swap must live inside the view to survive session restarts).
         // getCameraView() runs inside super.onCreate(), i.e. before this class's onCreate body initialises `prefs`,
         // hence the local read (UvcpadPrefs is a thin stateless SharedPreferences wrapper).
-        val storedType = UvcpadPrefs(this).rotationType
+        val storedType = ((UvcpadPrefs(this).rotationType % 4) + 4) % 4
         rotationType = storedType
         val view = RotatableAspectRatioTextureView(this)
         view.rotationDegrees = rotationDegrees(storedType)
@@ -550,10 +563,18 @@ class MainActivity : CameraActivity() {
                             toast(text)
                         }
                         rotationReopenInFlight = false
+                        // [uvcpad-rotate-p1] The resolution reopen has completed; a rotate tap that arrived during
+                        // the closed window can now run its own restart with the fresh session
+                        val applyDeferredRotation = rotationPendingAfterResolution
+                        rotationPendingAfterResolution = false
+                        resolutionReopenInFlight = false
                         // Opened successfully: clear any previous error/permission hints (including the USB guidance hint)
                         usbHintActive = false
                         usbHintHandler.removeCallbacksAndMessages(null)
                         clearError()
+                        if (applyDeferredRotation) {
+                            applyRotation()
+                        }
                     }
                     ICameraStateCallBack.State.CLOSED -> {
                         // [uvcpad-consistency-p3] Unplug notification: CLOSED with no resolution-switch request in progress
@@ -567,6 +588,11 @@ class MainActivity : CameraActivity() {
                     ICameraStateCallBack.State.ERROR -> {
                         // [uvcpad-rotate] A failed rotate-reopen must not leave the in-flight marker behind
                         rotationReopenInFlight = false
+                        // [uvcpad-rotate-p1] Same for the resolution window: a deferred rotation cannot be replayed
+                        // here (the session is not open) — rotationType is already persisted and the view/touch layer
+                        // already carry it, so the next successful open applies it via getCameraRequest().
+                        resolutionReopenInFlight = false
+                        rotationPendingAfterResolution = false
                         // Switch failure/camera exception: clear the in-flight switch request to avoid a leftover pending
                         // falsely reporting a "fallback" on a later OPENED
                         pendingModeW = 0
@@ -643,6 +669,15 @@ class MainActivity : CameraActivity() {
         currentModeW = width
         currentModeH = height
         prefs.resolutionMode = mode
+        // [uvcpad-rotate-p1] A rotate-triggered restart owns the session right now (closed, reopen queued): that reopen
+        // rebuilds the request through getCameraRequest(), so it already carries the new size + rotation. Starting
+        // updateResolution() here would queue a second reopen from AUSBC's stale mCameraRequest (old size + old
+        // RotateType) and the two would overwrite each other. Just refresh the pending target instead.
+        if (rotationReopenInFlight) {
+            pendingModeW = width
+            pendingModeH = height
+            return
+        }
         if (isCameraOpened()) {
             // AUSBC 3.6.0: updateResolution is asynchronous — it internally closeCamera() and
             // re-opens the camera 1s later, auto-negotiating the closest supported size; it does
@@ -653,10 +688,14 @@ class MainActivity : CameraActivity() {
             // adapted for AUSBC's async switch).
             pendingModeW = width
             pendingModeH = height
+            // [uvcpad-rotate-p1] Mark the updateResolution window (close now, reopen in 1s) so a rotate tap in between
+            // is deferred until the session is back instead of racing a second close/open pair
+            resolutionReopenInFlight = true
             try {
                 updateResolution(width, height)
             } catch (e: Exception) {
                 // Defensive: AUSBC does not normally throw here, but surface any failure loudly
+                resolutionReopenInFlight = false
                 pendingModeW = 0
                 pendingModeH = 0
                 val msg = getString(R.string.status_error, e.message ?: e.javaClass.simpleName)
@@ -685,10 +724,12 @@ class MainActivity : CameraActivity() {
     /** Rotation button label: "⟳" at 0°, "⟳90°" / "⟳180°" / "⟳270°" otherwise */
     private fun updateRotateButton() {
         if (!::btnRotate.isInitialized) return
-        btnRotate.text = if (rotationType == 0) {
+        // [uvcpad-rotate-p1] Use the normalised angle (defensive against a bad persisted value)
+        val degrees = rotationDegrees(rotationType)
+        btnRotate.text = if (degrees == 0) {
             getString(R.string.keybar_rotate)
         } else {
-            getString(R.string.keybar_rotate_angle, rotationType * 90)
+            getString(R.string.keybar_rotate_angle, degrees)
         }
     }
 
@@ -709,6 +750,9 @@ class MainActivity : CameraActivity() {
      * - double tap while a reopen is in flight: the queued reopen is rescheduled and the latest rotationType is picked up
      *   by getCameraRequest() at open time (no overlapping close/open pairs);
      * - capture card unplugged / no camera: nothing to reopen — the rotation is persisted and applied on the next open;
+     * - resolution switch in flight (updateResolution already closed the camera and will reopen in 1s): defer this
+     *   rotation to the next OPENED ([rotationPendingAfterResolution]) — AUSBC's queued reopen reuses its stale
+     *   mCameraRequest, so rotating now would be lost and two reopens would race (uvcpad-rotate-p1);
      * - screenshot in progress: isCameraOpened() turns false right after closeCamera(), captureJpg() degrades to the
      *   existing "waiting" hint.
      */
@@ -717,6 +761,16 @@ class MainActivity : CameraActivity() {
         view.rotationDegrees = rotationDegrees(rotationType)
         if (::touchLayer.isInitialized) {
             touchLayer.displayRotationDegrees = rotationDegrees(rotationType)
+        }
+        if (resolutionReopenInFlight) {
+            // [uvcpad-rotate-p1] The resolution reopen is already queued; apply the rotate restart once it completes
+            if (!isCameraOpened()) {
+                rotationPendingAfterResolution = true
+                return
+            }
+            // Camera still open → updateResolution() bailed out early (isStreaming/isRecording guard) and no reopen
+            // is queued; drop the stale marker and run the normal rotate restart below
+            resolutionReopenInFlight = false
         }
         if (!isCameraOpened()) return
         if (rotationReopenInFlight) {

@@ -325,9 +325,22 @@ CAMERA（UVC 必需）→ BLUETOOTH_CONNECT/BLUETOOTH_SCAN（S+，合并请求�
   `RotatableAspectRatioTextureView`（copy 上游 fit-inside onMeasure，`setAspectRatio` 在 90/270 内部交换 w/h）——
   保证重开会话后不会被覆盖回未交换值；`syncTouchLayerBounds` 逻辑不变（仍取相机视图布局 bounds）。
 - **触摸映射**：`TransparentTouchLayer.displayRotationDegrees` 非 0 时，用 `MotionEvent.obtain(event)` + 
-  `Matrix.setRotate(deg, w/2, h/2)` + `MotionEvent.transform` 把坐标转回未旋转坐标系（覆盖全部 pointer 与历史采样）：
-  90° → `(dx,dy)→(-dy,dx)`；180° → 取反；270° → `(dy,-dx)`。原始 event 不被修改，DOWN 的事件归属不受影响。
-  （AUSBC 的 ANGLE_90 是 clip space（y 轴向上）+90° 旋转，屏幕上看是**逆时针**，所以反算用 +90°；真机需复核方向）
+  `Matrix.setRotate(-deg, w/2, h/2)` + `MotionEvent.transform` 把坐标转回未旋转坐标系（覆盖全部 pointer 与历史采样）：
+  90° → `(dx,dy)→(dy,-dx)`；180° → 取反；270° → `(-dy,dx)`。原始 event 不被修改，DOWN 的事件归属不受影响。
+- **屏幕旋转方向（结论，javap 反编译 + 矩阵推导，`[uvcpad-rotate-p1]` 修正）**：`CameraRender.setMVPMatrix` 对 ANGLE_90 用
+  `angle=90°` 填充列主序 MVP：`m[0]=cos, m[1]=-sin, m[4]=sin, m[5]=cos` → `x'=cos·x+sin·y, y'=-sin·x+cos·y`，
+  即 `(x,y)→(y,-x)`。clip space 为 y 轴向上，右边缘 `(1,0)` → 下边缘 `(0,-1)`，**所以 ANGLE_90 在屏幕上实际是顺时针 90°**
+  （ANGLE_270 → `(x,y)→(-y,x)`，右边缘→上边缘 = 逆时针 90°；ANGLE_180 两者取反）。
+  显示 = 原图顺时针转，故反算需逆时针转；Android 屏幕坐标 y 向下、`Matrix.setRotate(+deg)` 本身是顺时针，
+  因此反算矩阵是 `setRotate(-degrees)`（旧注释误判为逆时针、用了 `+degrees`，手势方向因此整体反了）。
+- **两条会话重建路径互斥（`[uvcpad-rotate-p1]`）**：`applyRotation`（旋转）与 `switchMode → updateResolution`（分辨率）
+  各自 `closeCamera()` + 1s 后重开，且 `updateResolution` 复用 AUSBC 内部旧的 `mCameraRequest`（旧尺寸 + 旧 RotateType），
+  并发会互相覆盖。故：`rotationReopenInFlight` 期间 `switchMode` 只更新 `currentModeW/H` + `pendingModeW/H` 并返回
+  （旋转重开会经 `getCameraRequest()` 带上新尺寸与旋转）；`resolutionReopenInFlight` 期间 `applyRotation` 只置
+  `rotationPendingAfterResolution`，待下一个 OPENED 再执行旋转重启。
+- **已知限制：截图不随显示旋转** `[uvcpad-rotate-p1]`：旋转只作用于 `CameraRender` 的 GL 预览（MVP 旋转）；
+  截图走 `CaptureRender` 的 NV21 原始帧，不经过该矩阵 → 90°/180°/270° 下截图像素方向与屏幕显示不一致（仍为采集卡原始方向）。
+  后续若需一致，应在 `captureJpg()` 落盘前按 `rotationType` 对 JPEG 做旋转（本轮不改代码，仅记录）。
 - **速度口径说明**：按下速度按钮后 `mouseSpeed`/`scrollSpeed` 被覆盖为 `SpeedLevel.mouse/scroll`（level 4 均为 1.0f），`ViewListener` 构造时默认 0.33f 仅在覆盖装配之前生效——与 §3.6 例 2 口径一致。
 - **区域消费**：panel 容器 `setOnTouchListener { _, _ -> true }` + 按钮各自 clickable → 落在按键栏边界内的所有触摸被消费，不进触控手势层（点菜单不会触发鼠标报告）。
 - 按键栏展开期间，**栏外区域仍是触控板**（两指滚动/移动照常，符合需求"只有菜单区优先消费"）。

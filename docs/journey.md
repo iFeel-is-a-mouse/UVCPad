@@ -47,6 +47,23 @@
   DOWN 事件归属不受影响。
 - **状态**：`prefs.rotation_type`（0..3，默认 0）持久化，启动读取并应用；构建 `:app:assembleDebug` 通过；真机手势方向/黑边位置待验。
 
+### 旋转复核修复批次（2026-11-09，[uvcpad-rotate-p1]，v0.2.12）
+
+- **P1 触摸反旋转方向（reviewer 复核 6a58ea6）**：反编译 `CameraRender.setMVPMatrix` 自行推导——ANGLE_90 的 MVP 为
+  `x'=cos·x+sin·y, y'=-sin·x+cos·y`（列主序 `m[0]=cos, m[1]=-sin, m[4]=sin, m[5]=cos`），90° 时 `(x,y)→(y,-x)`，
+  clip space y 向上 ⇒ 右边缘→下边缘，**屏幕上是顺时针 90°**（原注释误写逆时针）。显示顺时针 ⇒ 反算逆时针；
+  Android y 向下、`setRotate(+deg)` 顺时针 ⇒ 反算用 `setRotate(-degrees)`。`TransparentTouchLayer.kt` 的符号与注释已修正
+  （90° 手势增量 `(dx,dy)→(dy,-dx)`；270° → `(-dy,dx)`）。
+- **P2 双重重开竞态**：`applyRotation`（旋转）与 `switchMode→updateResolution`（分辨率）都 closeCamera+1s 重开，
+  且后者复用 AUSBC 旧 `mCameraRequest`（旧尺寸 + 旧 RotateType）。新增 `resolutionReopenInFlight` /
+  `rotationPendingAfterResolution`：旋转重启在飞时 `switchMode` 只记 `currentModeW/H`+`pending` 后返回（旋转重开经
+  `getCameraRequest()` 带新尺寸）；分辨率重启在飞时 `applyRotation` 延迟到下一个 OPENED 再执行。
+- **P2 截图方向（已知限制，本轮不改代码）**：旋转只影响 `CameraRender` 预览；截图走 `CaptureRender` NV21 原始帧，
+  90/180/270 下截图方向与显示不一致（已写入 DESIGN §3.4「已知限制」）。
+- **P3 prefs 归一化**：onCreate（及 `getCameraView`）用 `((v % 4) + 4) % 4` 归一化；`updateRotateButton` 改用归一化角度。
+- **版本**：versionCode 4→5，versionName 0.2.11→**0.2.12**（0.2.11 已发布，不重号）。
+- **验收**：`./gradlew :app:assembleDebug` BUILD SUCCESSFUL（release 另跑一遍）。
+
 ## M0 需求冻结（2026-08-11）
 
 - **一句话需求**：采集卡画面显示在 pad + pad 触摸经蓝牙 HID 控制 PC + 触控层透明透出采集内容（整合 hdmi2mp 与 KeysJoy）。

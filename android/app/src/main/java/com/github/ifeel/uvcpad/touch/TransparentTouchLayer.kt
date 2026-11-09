@@ -39,6 +39,9 @@ class TransparentTouchLayer @JvmOverloads constructor(
      * [uvcpad-rotate] Current display rotation in degrees (0/90/180/270), kept in sync with the camera frame rotation.
      * Non-zero makes [onTouchEvent] rotate the touch coordinates back into the unrotated frame before the gesture
      * engine sees them, so swipe directions still match what the user sees on screen.
+     *
+     * Screen direction (verified by decompiling AUSBC 3.6.0 CameraRender.setMVPMatrix, see [onTouchEvent]):
+     * ANGLE_90 turns the preview 90° CLOCKWISE on screen, ANGLE_270 90° COUNTER-clockwise.
      */
     var displayRotationDegrees: Int = 0
 
@@ -97,19 +100,28 @@ class TransparentTouchLayer @JvmOverloads constructor(
         if (degrees == 0) {
             return listener.onTouch(this, event)
         }
-        // [uvcpad-rotate] Rotate the event coordinates back into the unrotated frame (DESIGN §3.4).
-        // AUSBC's RotateType.ANGLE_90 is a +90° rotation applied in clip space (y-up), which appears as a 90°
-        // COUNTER-clockwise turn on screen. Recovering the original point is therefore the inverse turn, i.e.
-        // Matrix.setRotate(+degrees) (Android angles are clockwise because y grows downwards):
-        //   90°  → setRotate(+90): displayed delta (dx,dy) becomes (-dy,dx)  (displayed right = original down)
-        //   180° → setRotate(+180): deltas negate
-        //   270° → setRotate(-90): displayed delta becomes (dy,-dx)
+        // [uvcpad-rotate-p1] Rotate the event coordinates back into the unrotated frame (DESIGN §3.4).
+        //
+        // Direction derivation (javap -c of AUSBC 3.6.0 CameraRender.setMVPMatrix, not taken on trust):
+        //   ANGLE_90 → setRotateAngle passes 90 → angle = 90·π/180, and the identity MVP is filled
+        //   column-major with m[0]=cos, m[1]=-sin, m[4]=sin, m[5]=cos, i.e.
+        //     x' =  cos·x + sin·y ,  y' = -sin·x + cos·y
+        //   At 90° that is (x,y) → (y,-x) in clip space. Clip space is y-up, so the right-edge direction
+        //   (1,0) lands on the bottom edge (0,-1) → the preview is turned 90° CLOCKWISE on screen.
+        //   (270° gives (x,y) → (-y,x): right edge → top edge = 90° counter-clockwise; 180° negates both.)
+        //
+        // Inverse for touches: display = rotateCW(original), so original = rotateCCW(display). Android screen
+        // coordinates are y-down, where Matrix.setRotate(+deg) itself turns clockwise → the inverse turn is
+        // Matrix.setRotate(-degrees):
+        //   90°  → setRotate(-90): displayed delta (dx,dy) → (dy,-dx)   (displayed right = original up)
+        //   180° → setRotate(-180): deltas negate
+        //   270° → setRotate(+90): displayed delta (dx,dy) → (-dy,dx)
         // MotionEvent.transform applies the matrix to every pointer (including historical samples), which keeps
         // multi-finger scroll/pinch deltas consistent automatically. The original event is untouched → Android's
         // ACTION_DOWN hit-test (event ownership / dispatch target) is unaffected; only the copy handed to the
         // gesture engine carries rotated coordinates.
         val rotated = MotionEvent.obtain(event)
-        rotateMatrix.setRotate(degrees.toFloat(), width / 2f, height / 2f)
+        rotateMatrix.setRotate(-degrees.toFloat(), width / 2f, height / 2f)
         rotated.transform(rotateMatrix)
         return try {
             listener.onTouch(this, rotated)
