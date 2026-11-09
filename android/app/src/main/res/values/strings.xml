@@ -37,4 +37,11 @@
     <string name="keybar_popup_no_device">No device connected</string>
     <string name="keybar_popup_make_discoverable">📡 Make Discoverable</string>
     <string name="keybar_popup_no_paired">No paired devices</string>
+    <!-- [uvcpad-lint] HardcodedText: key-bar button glyphs / initial labels moved out of the layout -->
+    <string name="keybar_btn_speed_icon">4️⃣</string>
+    <string name="keybar_btn_bt_icon">📡</string>
+    <string name="keybar_btn_auto_pair_icon">🔗</string>
+    <string name="keybar_btn_mode_16_9">16:9</string>
+    <string name="keybar_btn_capture_icon">📷</string>
+    <string name="keybar_btn_exit_icon">⏻</string>
 </resources>

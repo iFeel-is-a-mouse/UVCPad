@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [uvcpad-lint] Pre-Android-12 counterpart of data_extraction_rules.xml (minSdk 28):
+     allowBackup is already false, and even if a platform honours full backup, the prefs
+     (which contain the remembered Bluetooth host address) are excluded. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+</full-backup-content>

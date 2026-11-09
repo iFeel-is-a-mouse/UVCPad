@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [uvcpad-lint] android:allowBackup is already false, but Android 12+ still consults
+     dataExtractionRules for cloud backup / device-to-device transfer. The prefs contain the
+     remembered Bluetooth address of the host PC, which must not leave this device, so both
+     channels exclude the whole sharedpref domain. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

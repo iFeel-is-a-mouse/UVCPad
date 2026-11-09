@@ -64,7 +64,7 @@
                 android:layout_width="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:text="4️⃣"
+                android:text="@string/keybar_btn_speed_icon"
                 android:textSize="14sp" />
 
             <!-- Bluetooth: shows device name/status; tap to connect/disconnect; long-press → multi-device switch (showDeviceSwitcher) -->
@@ -76,7 +76,7 @@
                 android:layout_marginEnd="4dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:text="📡"
+                android:text="@string/keybar_btn_bt_icon"
                 android:textSize="14sp" />
 
             <!-- Auto-pair 🔗: toggles autoPairFlag + startAutoReconnect/stopAutoReconnect -->
@@ -86,7 +86,7 @@
                 android:layout_width="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:text="🔗"
+                android:text="@string/keybar_btn_auto_pair_icon"
                 android:textSize="14sp" />
 
             <!-- Resolution: 16:9 ↔ 4:3 (reuses switchMode; button label follows currentMode) -->
@@ -96,7 +96,7 @@
                 android:layout_width="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:text="16:9"
+                android:text="@string/keybar_btn_mode_16_9"
                 android:textSize="14sp" />
 
             <!-- Rotation ⟳ [uvcpad-rotate]: independent button right of the resolution button; cycles 0→90→180→270→0;
@@ -107,7 +107,7 @@
                 android:layout_width="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:text="⟳"
+                android:text="@string/keybar_rotate"
                 android:textSize="14sp" />
 
             <!-- Screenshot 📷: captureJpg() (including MediaStore import) -->
@@ -117,7 +117,7 @@
                 android:layout_width="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:text="📷"
+                android:text="@string/keybar_btn_capture_icon"
                 android:textSize="14sp" />
 
             <!-- Flexible spacer: pushes the exit button to the far right (hdmi2mp convention), while letting the triangle (top-center)
@@ -134,7 +134,7 @@
                 android:layout_width="wrap_content"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                android:text="⏻"
+                android:text="@string/keybar_btn_exit_icon"
                 android:textSize="14sp" />
         </com.github.ifeel.uvcpad.ui.KeyBarPanel>
 
