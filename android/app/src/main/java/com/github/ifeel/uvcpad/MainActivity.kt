@@ -447,6 +447,10 @@ class MainActivity : CameraActivity() {
 
     // ============ AUSBC CameraActivity abstract methods (hdmi2mp verbatim) ============
 
+    // [uvcpad-lint] InflateParams: the AUSBC contract hands back a detached root that the
+    // library itself attaches to its camera container; no parent view exists at this point,
+    // so passing null is required and safe.
+    @SuppressLint("InflateParams")
     override fun getRootView(layoutInflater: LayoutInflater): View? {
         return layoutInflater.inflate(R.layout.activity_main, null)
     }

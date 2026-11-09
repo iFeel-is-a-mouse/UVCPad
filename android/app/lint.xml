@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- [uvcpad-lint] IconLauncherShape is a deliberate brand decision: the launcher art is a
+         full-bleed square tile (the source artwork is provided exactly like that), so the PNG
+         intentionally fills every pixel. The adaptive icon (mipmap-anydpi/ic_launcher.xml) already
+         supplies the rounded-mask variant used by modern launchers. Not changing the artwork. -->
+    <issue id="IconLauncherShape" severity="ignore" />
+    <!-- [uvcpad-lint] IconXmlAndPng: the adaptive-icon XML (mipmap-anydpi) is authoritative on
+         every supported device (minSdk 28); the density PNGs are kept untouched as brand/legacy
+         assets, exactly as discussed for IconLauncherShape. -->
+    <issue id="IconXmlAndPng" severity="ignore" />
+</lint>

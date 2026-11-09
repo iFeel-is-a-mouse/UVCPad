@@ -71,7 +71,10 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="sensorLandscape">
+            android:screenOrientation="sensorLandscape"
+            tools:ignore="DiscouragedApi">
+            <!-- tools:ignore DiscouragedApi: this is a fixed-landscape capture-monitor app; the whole
+                 UI assumes landscape (key bar/touch mapping), so allowing free rotation would break it. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
