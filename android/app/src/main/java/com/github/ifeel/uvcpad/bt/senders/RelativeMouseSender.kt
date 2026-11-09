@@ -111,11 +111,11 @@ open class RelativeMouseSender(
         if (dyInt > 2047) dyInt = 2047
         if (dyInt < -2047) dyInt = -2047
 
-        val bytesArrX = ByteArray(2) { 0 }
+        val bytesArrX = ByteArray(2)
         val buffX: ByteBuffer = ByteBuffer.wrap(bytesArrX)
         buffX.putShort(dxInt.toShort())
 
-        val bytesArrY = ByteArray(2) { 0 }
+        val bytesArrY = ByteArray(2)
         val buffY: ByteBuffer = ByteBuffer.wrap(bytesArrY)
         buffY.putShort(dyInt.toShort())
 

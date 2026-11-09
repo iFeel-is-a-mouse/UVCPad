@@ -7,7 +7,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
@@ -22,6 +21,8 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.graphics.drawable.toDrawable
+import androidx.core.graphics.toColorInt
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -213,14 +214,11 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
             reader.start()
             // Bounded wait for the read stream: give up on timeout if logcat hangs, never stalling crash handling
             reader.join(LOGCAT_READ_TIMEOUT_MS)
-            // Reap the process: logcat -d is a non-interactive command that exits by itself after destroy;
-            // on API 26+ add a short-timeout waitFor to confirm reaping (waitFor(timeout) is API 26+)
-            if (Build.VERSION.SDK_INT >= 26) {
-                if (!process.waitFor(1, TimeUnit.SECONDS)) {
-                    process.destroyForcibly()
-                }
-            } else {
-                process.destroy()
+            // Reap the process: logcat -d is a non-interactive command that exits by itself after destroy.
+            // [uvcpad-lint] minSdk 28 → waitFor(timeout) (API 26+) is always available; the old
+            // pre-26 destroy() fallback was dead code and has been removed.
+            if (!process.waitFor(1, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
             }
         } catch (e: Exception) {
             return "(logcat dump unavailable: ${e.javaClass.simpleName})"
@@ -295,14 +293,14 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         // ---- Build the dialog content programmatically (no new layout resources, keep it minimal) ----
         val title = TextView(activity).apply {
             text = "App crashed (diagnostic)"
-            setTextColor(Color.parseColor("#FFFF5252"))
+            setTextColor("#FFFF5252".toColorInt())
             textSize = 22f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
         }
         val head = TextView(activity).apply {
             text = "${throwable.javaClass.name}\n${throwable.message ?: "(no message)"}"
-            setTextColor(Color.parseColor("#FFFF5252"))
+            setTextColor("#FFFF5252".toColorInt())
             textSize = 18f
             typeface = Typeface.DEFAULT_BOLD
             setPaddingRelative(8.dp(activity), 0, 8.dp(activity), 0)
@@ -312,7 +310,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         // non-main-thread ScrollBarDrawable crashes
         val stack = TextView(activity).apply {
             text = stackLines
-            setTextColor(Color.parseColor("#FFFF6E6E"))
+            setTextColor("#FFFF6E6E".toColorInt())
             textSize = 15f
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
@@ -334,7 +332,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
                 ""
             }
             text = "Crash log: $loc$extra"
-            setTextColor(Color.parseColor("#FFB0B0B0"))
+            setTextColor("#FFB0B0B0".toColorInt())
             textSize = 12f
             setPaddingRelative(8.dp(activity), 0, 8.dp(activity), 4.dp(activity))
         }
@@ -342,7 +340,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
             text = "Exit"
             setTextColor(Color.WHITE)
             textSize = 18f
-            setBackgroundColor(Color.parseColor("#CCD32F2F"))
+            setBackgroundColor("#CCD32F2F".toColorInt())
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -351,7 +349,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
         }
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F2111111"))
+            setBackgroundColor("#F2111111".toColorInt())
             setPadding(16.dp(activity), 16.dp(activity), 16.dp(activity), 16.dp(activity))
             addView(title, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -379,7 +377,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
             setContentView(content)
         }
         dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
             setLayout(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT

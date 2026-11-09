@@ -1,6 +1,7 @@
 package com.github.ifeel.uvcpad
 
 import android.content.Context
+import androidx.core.content.edit
 
 /**
  * SharedPreferences wrapper for uvcpad preferences (new in DESIGN §1.1).
@@ -29,25 +30,26 @@ class UvcpadPrefs(context: Context) {
     var speedLevel: Int
         get() = prefs.getInt(KEY_SPEED_LEVEL, DEFAULT_SPEED_LEVEL)
         set(value) {
-            prefs.edit().putInt(KEY_SPEED_LEVEL, value).apply()
+            // [uvcpad-lint] UseKtx: SharedPreferences.edit {} extension (apply semantics preserved)
+            prefs.edit { putInt(KEY_SPEED_LEVEL, value) }
         }
 
     var autoPair: Boolean
         get() = prefs.getBoolean(KEY_AUTO_PAIR, true)
         set(value) {
-            prefs.edit().putBoolean(KEY_AUTO_PAIR, value).apply()
+            prefs.edit { putBoolean(KEY_AUTO_PAIR, value) }
         }
 
     var screenOn: Boolean
         get() = prefs.getBoolean(KEY_SCREEN_ON, true)
         set(value) {
-            prefs.edit().putBoolean(KEY_SCREEN_ON, value).apply()
+            prefs.edit { putBoolean(KEY_SCREEN_ON, value) }
         }
 
     var autoHideMs: Long
         get() = prefs.getLong(KEY_AUTO_HIDE_MS, DEFAULT_AUTO_HIDE_MS)
         set(value) {
-            prefs.edit().putLong(KEY_AUTO_HIDE_MS, value).apply()
+            prefs.edit { putLong(KEY_AUTO_HIDE_MS, value) }
         }
 
     init {
@@ -65,7 +67,7 @@ class UvcpadPrefs(context: Context) {
     var resolutionMode: Int
         get() = prefs.getInt(KEY_RESOLUTION_MODE, DEFAULT_RESOLUTION_MODE)
         set(value) {
-            prefs.edit().putInt(KEY_RESOLUTION_MODE, value).apply()
+            prefs.edit { putInt(KEY_RESOLUTION_MODE, value) }
         }
 
     /**
@@ -90,11 +92,11 @@ class UvcpadPrefs(context: Context) {
         } else {
             MODE_4_3
         }
-        prefs.edit()
-            .putInt(KEY_RESOLUTION_MODE, mode)
-            .remove(KEY_LEGACY_RESOLUTION_W)
-            .remove(KEY_LEGACY_RESOLUTION_H)
-            .apply()
+        prefs.edit {
+            putInt(KEY_RESOLUTION_MODE, mode)
+            remove(KEY_LEGACY_RESOLUTION_W)
+            remove(KEY_LEGACY_RESOLUTION_H)
+        }
     }
 
     /**
@@ -109,7 +111,7 @@ class UvcpadPrefs(context: Context) {
     var rotationType: Int
         get() = normalizeRotationType(prefs.getInt(KEY_ROTATION_TYPE, DEFAULT_ROTATION_TYPE))
         set(value) {
-            prefs.edit().putInt(KEY_ROTATION_TYPE, value).apply()
+            prefs.edit { putInt(KEY_ROTATION_TYPE, value) }
         }
 
     /** [uvcpad-last-device] Address of the most recently successfully connected Bluetooth device; null=no memory (first auto-connect falls back to mpluggedDevice) */
@@ -117,7 +119,7 @@ class UvcpadPrefs(context: Context) {
         get() = prefs.getString(KEY_LAST_DEVICE_ADDRESS, null)
         set(value) {
             // SharedPreferences semantics: putString(key, null) is equivalent to removing that key (clears the memory)
-            prefs.edit().putString(KEY_LAST_DEVICE_ADDRESS, value).apply()
+            prefs.edit { putString(KEY_LAST_DEVICE_ADDRESS, value) }
         }
 
     companion object {

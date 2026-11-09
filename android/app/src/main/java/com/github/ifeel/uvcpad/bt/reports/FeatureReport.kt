@@ -2,7 +2,7 @@ package com.github.ifeel.uvcpad.bt.reports
 
 @Suppress("EXPERIMENTAL_FEATURE_WARNING")
 class FeatureReport(
-    val bytes: ByteArray = ByteArray(1) { 0 }
+    val bytes: ByteArray = ByteArray(1)
 ) {
 
     var wheelResolutionMultiplier: Boolean

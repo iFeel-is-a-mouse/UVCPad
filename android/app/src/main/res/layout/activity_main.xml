@@ -7,8 +7,9 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootLayout"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/black">
+    android:layout_height="match_parent">
+    <!-- [uvcpad-lint] Overdraw: the black background is painted by the theme's windowBackground
+         (Theme.Uvcpad), so the root view must not paint it a second time. Visual result is identical. -->
 
     <!-- UVC camera render container (full screen; CameraActivity adds the render view automatically) -->
     <FrameLayout

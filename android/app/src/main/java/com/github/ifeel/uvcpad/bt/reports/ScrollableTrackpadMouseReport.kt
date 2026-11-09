@@ -6,7 +6,7 @@ import kotlin.experimental.or
 @Suppress("EXPERIMENTAL_FEATURE_WARNING")
 @JvmInline
 value class ScrollableTrackpadMouseReport (
-    val bytes: ByteArray = ByteArray(7) {0}
+    val bytes: ByteArray = ByteArray(7)
     ) {
 
 
