@@ -101,9 +101,13 @@ class UvcpadPrefs(context: Context) {
      * [uvcpad-rotate] Display rotation enum 0..3 (= 0/90/180/270 degrees, default 0).
      * Written when the explicit rotate button cycles; read at startup and applied both to the camera request
      * (AUSBC RotateType) and to the camera view's aspect ratio (90/270 transpose w/h).
+     *
+     * [uvcpad-rotate-test] The getter normalises corrupt/legacy persisted values (-1, 7, 100 …) onto 0..3, so
+     * every reader gets a valid enum without repeating the wrap-around formula (all existing call sites already
+     * wrapped the value defensively; this only removes the duplication and makes the invariant testable).
      */
     var rotationType: Int
-        get() = prefs.getInt(KEY_ROTATION_TYPE, DEFAULT_ROTATION_TYPE)
+        get() = normalizeRotationType(prefs.getInt(KEY_ROTATION_TYPE, DEFAULT_ROTATION_TYPE))
         set(value) {
             prefs.edit().putInt(KEY_ROTATION_TYPE, value).apply()
         }
@@ -136,6 +140,12 @@ class UvcpadPrefs(context: Context) {
         const val DEFAULT_RESOLUTION_MODE = MODE_4_3
         // [uvcpad-rotate] Default rotation 0° (no change for existing users)
         const val DEFAULT_ROTATION_TYPE = 0
+
+        /**
+         * [uvcpad-rotate-test] Map any persisted rotation value onto the 0..3 enum (Java/Kotlin `%` keeps the sign,
+         * hence the double modulo). Examples: -1 → 3, -5 → 3, 7 → 3, 100 → 0.
+         */
+        fun normalizeRotationType(value: Int): Int = ((value % 4) + 4) % 4
 
         // Legacy width/height pair keys (migration only, no longer read/written):
         // [uvcpad-resolution-mode] Old keys are kept in constants for migrateResolutionMode() to detect/remove

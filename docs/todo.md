@@ -56,7 +56,7 @@
 
 - [x] **setScanMode 反射记录**：✅ 代码已补注释（compileSdk 36 android.jar 无此 API → 反射，KeysJoy 同款）+ 失败降级提示（"Warning: not discoverable, tap to enable"，Android 12+ 可发现性行为已说明）
 - [ ] **3 处 deprecation 告警清理**（仍存在）：`getDefaultAdapter`（MainActivity ×3 / BluetoothController）、`GestureDetectorCompat`（ViewListener）、`VIBRATOR_SERVICE`（ViewListener）——KeysJoy 原样代码带入，另有 inline class 警告一并处理
-- [ ] **无测试目录，补冒烟测试**：`app/src` 下仅有 `main`，建立 `androidTest` 骨架 + 启动冒烟用例（应用可启动、权限链不崩）
+- [x] **无测试目录，补冒烟测试**：✅ [uvcpad-rotate-test]（2026-11-09）建立 `app/src/test` JVM 单测基建（Robolectric SDK 28 + Mockito inline），56 个用例覆盖旋转功能的模拟输入/模拟输出；`:app:testDebugUnitTest` 一条命令跑完，CI 已加 `.github/workflows/android.yml`。原计划的 `androidTest` 真机冒烟仍可后续按需补。
 
 ### auditor（P3）
 

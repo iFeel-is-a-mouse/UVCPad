@@ -48,6 +48,14 @@ android {
     lint {
         abortOnError false
     }
+
+    // [uvcpad-rotate-test] JVM unit tests run on Robolectric with the app's real resources
+    // (strings/theme parsed from res/), so the rotation tests need no device/emulator/capture card.
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -57,4 +65,14 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
     // AUSBC 3.6.0 (ernestp/AndroidUSBCamera, Apache 2.0) — via JitPack
     implementation 'com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0'
+
+    // [uvcpad-rotate-test] JVM unit tests (no device/emulator):
+    // - Robolectric runs the real Android framework classes at SDK 28 (= minSdk, @Config(sdk = [28]))
+    // - androidX test core provides ApplicationProvider
+    // - Mockito 5 ships the inline mock maker by default, required for final classes
+    //   (BluetoothHidDevice/BluetoothDevice) used by the end-to-end HID tests
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'androidx.test:core:1.6.1'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
 }

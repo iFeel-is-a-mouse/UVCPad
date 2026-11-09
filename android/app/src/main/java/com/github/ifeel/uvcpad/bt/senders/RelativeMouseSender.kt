@@ -17,20 +17,35 @@ open class RelativeMouseSender(
 ) {
     val mouseReport = ScrollableTrackpadMouseReport()
 
-    /** [uvcpad-fix-p3] Reuse a single Handler instead of a new Timer().schedule() per click (sendRightClick releases the button) */
+    /**
+     * [uvcpad-fix-p3] Reuse a single Handler instead of a new Timer().schedule() per click (sendRightClick releases the button)
+     */
     private val clickHandler = Handler(Looper.getMainLooper())
 
-    protected open fun sendMouse() {
+    /**
+     * [uvcpad-rotate-test] Single choke point for HID report emission, extracted from [sendMouse] so tests can
+     * capture the exact bytes handed to the Bluetooth stack. The default implementation is byte-for-byte the
+     * previous inline block: same BLUETOOTH_CONNECT guard, same "Report wasn't sent" log, same SecurityException
+     * drop. Returns true when the report was handed to the stack (a false sendReport return still counts as
+     * delivered, matching the previous behaviour of zeroing the fields afterwards); false when it was dropped
+     * before reaching the stack, so callers can preserve the old early-return semantics.
+     */
+    protected open fun emitReport(reportId: Int, bytes: ByteArray): Boolean {
         // [uvcpad-fix-p2] Silently drop when the S+ BLUETOOTH_CONNECT permission is revoked, avoiding a sendReport SecurityException crash
-        if (!BluetoothController.hasConnectPermission()) return
+        if (!BluetoothController.hasConnectPermission()) return false
         try {
-            if (!hidDevice.sendReport(host, ScrollableTrackpadMouseReport.ID, mouseReport.bytes)) {
+            if (!hidDevice.sendReport(host, reportId, bytes)) {
                 Log.e(TAG, "Report wasn't sent")
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "sendReport blocked: no BLUETOOTH_CONNECT", e)
-            return
+            return false
         }
+        return true
+    }
+
+    protected open fun sendMouse() {
+        if (!emitReport(ScrollableTrackpadMouseReport.ID, mouseReport.bytes)) return
         // Zero movement/scroll fields after send; preserve button state for drag support
         mouseReport.dxLsb = 0
         mouseReport.dxMsb = 0

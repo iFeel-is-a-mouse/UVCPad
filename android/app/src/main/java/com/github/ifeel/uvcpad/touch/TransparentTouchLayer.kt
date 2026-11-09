@@ -8,7 +8,6 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
-import com.github.ifeel.uvcpad.bt.listeners.ViewListener
 
 /**
  * Transparent touch layer (new in DESIGN §3.2; [uvcpad-touch-align] requirement: touch area = display area).
@@ -33,7 +32,10 @@ class TransparentTouchLayer @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     /** Gesture engine; null = not connected/disconnected, touches produce no reports */
-    private var gestureListener: ViewListener? = null
+    // [uvcpad-rotate-test] Typed as the View.OnTouchListener supertype (ViewListener is an instance of it) so the
+    // rotation tests can inject a fake listener that records the coordinates that actually reach the gesture layer.
+    // Production usage is unchanged: MainActivity still passes its ViewListener.
+    private var gestureListener: View.OnTouchListener? = null
 
     /**
      * [uvcpad-rotate] Current display rotation in degrees (0/90/180/270), kept in sync with the camera frame rotation.
@@ -55,7 +57,7 @@ class TransparentTouchLayer @JvmOverloads constructor(
     var onAnyTouch: (() -> Unit)? = null
 
     /** Mounts the gesture engine after Bluetooth connects; pass null to unmount on disconnect (DESIGN §3.7: unmount the listener before nulling the sender) */
-    fun setGestureListener(listener: ViewListener?) {
+    fun setGestureListener(listener: View.OnTouchListener?) {
         gestureListener = listener
     }
 

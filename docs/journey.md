@@ -23,6 +23,7 @@
 | 真机实测通过 | 2026-11-09 | 用户确认「已经实测可以用了」——显示链路 + 蓝牙 HID 触控链路在真实设备跑通 |
 | v0.2.11 公开发布 | 2026-11-09 | versionCode 4；GitHub Release 上传 arm64 APK（4.19 MB）；首个可安装公开版本 |
 | 显式旋转按钮 | 2026-11-09 | commit **见 git log [uvcpad-rotate]**：按键栏新增 ⟳ 按钮（0/90/180/270 循环，`prefs.rotation_type`）；90/270 宽高比交换 + 触摸坐标反旋转；AUSBC 无运行时 surface resize → closeCamera+reopen |
+| 旋转测试基建 | 2026-11-09 | **[uvcpad-rotate-test]** 56 个 JVM 单测（Robolectric SDK 28）+ GitHub Actions：模拟输入（4 角度×多增量/多指/非正方形）与模拟输出（7 字节 HID 报告/钳制/亚像素）全绿，`./gradlew :app:testDebugUnitTest` 一条命令跑完 |
 
 ## 关键 commit 对照
 
@@ -63,6 +64,21 @@
 - **P3 prefs 归一化**：onCreate（及 `getCameraView`）用 `((v % 4) + 4) % 4` 归一化；`updateRotateButton` 改用归一化角度。
 - **版本**：versionCode 4→5，versionName 0.2.11→**0.2.12**（0.2.11 已发布，不重号）。
 - **验收**：`./gradlew :app:assembleDebug` BUILD SUCCESSFUL（release 另跑一遍）。
+
+### 旋转功能测试基建（2026-11-09，[uvcpad-rotate-test]）
+
+- **目标**：旋转按钮功能可重复回归，覆盖「模拟输入」（触摸链路）与「模拟输出」（HID 报告），一条命令跑完，不依赖真机/模拟器/采集卡。
+- **基建**：`android/app/build.gradle` 加 JUnit4 + Robolectric 4.14.1 + androidx.test:core + Mockito 5（inline mock maker，可 mock final 的 `BluetoothHidDevice`）；
+  `testOptions.unitTests.includeAndroidResources = true`；测试统一 `@Config(sdk = [28])` 对齐 minSdk。
+- **覆盖**（56 个用例，6 个测试类）：触摸反旋转 4 角度×4 增量的人肉推导表 + 多指 DOWN/UP + 1600×1200 非正方形旋转中心 + 角度归一化；
+  `ScrollableTrackpadMouseReport` 7 字节布局/按钮位/滚动补码；`RelativeMouseSender` ±2047 钳制/小端 dx dy/发送后清零；
+  `ViewListener` 端到端 tap（4 次唤醒 + 左键按下/抬起）与 move、亚像素累积（鼠标 0.2px×3→1px、滚轮 0.25×3→1 步）、90° 下滑→光标右移；
+  `RotatableAspectRatioTextureView` 90/270 交换宽高比、prefs 非法值归一化与按钮标签角度一致。
+- **最小接缝（不改生产行为）**：`RelativeMouseSender.emitReport()`（原 sendReport 内联块的唯一收口，默认实现逐字等价）；
+  `TransparentTouchLayer.setGestureListener()` 参数放宽为 `View.OnTouchListener`（便于注入坐标记录器，生产仍传 ViewListener）；
+  `UvcpadPrefs.rotationType` getter 收口归一化（原各调用点已各自归一化，幂等）。
+- **CI**：`.github/workflows/android.yml`（push/PR，`permissions: contents: read`）跑 `testDebugUnitTest` + `assembleDebug`。
+- **验收**：`./gradlew :app:testDebugUnitTest` → 56 tests, 0 failed。
 
 ## M0 需求冻结（2026-08-11）
 
