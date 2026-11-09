@@ -30,13 +30,18 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     }
 
 
+    // [uvcpad-lint] MissingPermission: replyReport needs BLUETOOTH_CONNECT, guarded by
+    // hasConnectPermission(); the try/catch stays as a last-resort revoke race net.
+    @SuppressLint("MissingPermission")
     override fun onGetReport(device: BluetoothDevice?, type: Byte, id: Byte, bufferSize: Int) {
         try {
             super.onGetReport(device, type, id, bufferSize)
             if (type == BluetoothHidDevice.REPORT_TYPE_FEATURE) {
                 featureReport.wheelResolutionMultiplier = true
                 featureReport.acPanResolutionMultiplier = true
-                btHid?.replyReport(device, type, FeatureReport.ID, featureReport.bytes)
+                if (hasConnectPermission()) {
+                    btHid?.replyReport(device, type, FeatureReport.ID, featureReport.bytes)
+                }
             }
         } catch (e: Throwable) {
             Log.e(TAG, "onGetReport crash", e)
@@ -215,6 +220,9 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         reconnectHandler = null
     }
 
+    // [uvcpad-lint] MissingPermission: connectedDevices needs BLUETOOTH_CONNECT; the read is
+    // wrapped in try/catch and treats a SecurityException as a stale proxy (previous behaviour).
+    @SuppressLint("MissingPermission")
     fun init(ctx: Context) {
         // [uvcpad-fix-p2] On first launch, onStart initBluetooth and onResume btHid==null run two getProfileProxy calls in the same frame:
         // short-circuit the second call while one is already issued and not returned; the flag is cleared on onServiceConnected/onServiceDisconnected
@@ -326,11 +334,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
             // Set the discoverable name to "uvcpad" so PCs see it instead of the
             // device model name (e.g. "MatePad Paper"). Must be re-applied on every
             // service connect because the system may reset the name after reboot.
-            try {
-                btAdapter.setName("uvcpad")
-            } catch (e: Throwable) {
-                Log.e(TAG, "setName failed", e)
-            }
+            applyDiscoverableName()
             // [uvcpad-fix-p2] S1: a failed registerApp does not linger — auto-retries once after 3s; on another failure it sets
             // btHid=null so later onResume/manual re-entry can re-init (the user can trigger it again instead of being stuck)
             if (tryRegisterApp(btHid)) {
@@ -382,6 +386,20 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         } catch (e: Throwable) {
             initInProgress = false
             Log.e(TAG, "onServiceConnected crash", e)
+        }
+    }
+
+    /**
+     * [uvcpad-lint] setName needs BLUETOOTH_CONNECT on S+. Guarded by hasConnectPermission();
+     * the try/catch degrades quietly if the grant is revoked mid-session.
+     */
+    @SuppressLint("MissingPermission")
+    private fun applyDiscoverableName() {
+        if (!hasConnectPermission()) return
+        try {
+            btAdapter.setName("uvcpad")
+        } catch (e: Throwable) {
+            Log.e(TAG, "setName failed", e)
         }
     }
 
@@ -455,6 +473,9 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
         }
     }
 
+    // [uvcpad-lint] MissingPermission: re-registerApp needs BLUETOOTH_CONNECT; wrapped in the
+    // method's try/catch, which resets the proxy and reports the failure instead of crashing.
+    @SuppressLint("MissingPermission")
     override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
         try {
             super.onAppStatusChanged(pluggedDevice, registered)
@@ -654,6 +675,9 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     }
 
     /** [uvcpad-fix-p2] S1 registerApp wrapper: exceptions count as failure, returns whether registration succeeded */
+    // [uvcpad-lint] MissingPermission: registerApp needs BLUETOOTH_CONNECT; exceptions are
+    // converted to a false return (the caller degrades), so no crash can escape.
+    @SuppressLint("MissingPermission")
     private fun tryRegisterApp(proxy: BluetoothHidDevice): Boolean {
         return try {
             proxy.registerApp(sdpRecord, null, qosOut, { it.run() }, this)

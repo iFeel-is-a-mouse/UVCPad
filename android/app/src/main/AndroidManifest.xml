@@ -31,6 +31,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- [uvcpad-lint] S+ requires BLUETOOTH_ADVERTISE for the "Make Discoverable" action
+         (ACTION_REQUEST_DISCOVERABLE / setScanMode); requested at runtime in the serial
+         permission chain together with BLUETOOTH_CONNECT. Declared without maxSdkVersion so the
+         S+ runtime grant can resolve it (pre-S platforms simply ignore the unknown permission). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <!-- neverForLocation: the app never derives location from Bluetooth scans (uvcpad does no
          scanning at all — HID uses only getProfileProxy/registerApp/connect), so on Android 12+
          BLUETOOTH_SCAN does not drag in the location permission (DESIGN §1.3) -->

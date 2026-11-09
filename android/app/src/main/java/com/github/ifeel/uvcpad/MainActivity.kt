@@ -242,6 +242,8 @@ class MainActivity : CameraActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // [uvcpad-lint] CONNECT/SCAN are mandatory for the HID flow, ADVERTISE only for
+            // "Make Discoverable" — denying ADVERTISE must not raise the blocking BT error.
             val granted = result[Manifest.permission.BLUETOOTH_CONNECT] == true &&
                 result[Manifest.permission.BLUETOOTH_SCAN] == true
             if (!granted) {
@@ -1101,6 +1103,13 @@ class MainActivity : CameraActivity() {
         popup.setOnMenuItemClickListener { item ->
             if (item.itemId == -2) {
                 // Make Discoverable
+                // [uvcpad-lint] S+ needs BLUETOOTH_ADVERTISE. Without it the menu item stays
+                // tappable but gives an actionable prompt: fire the permission chain and retry.
+                if (!hasAdvertisePermission()) {
+                    toast(getString(R.string.bt_advertise_permission_denied))
+                    requestBtPermissionsIfNeeded()
+                    return@setOnMenuItemClickListener true
+                }
                 try {
                     BluetoothAdapter.getDefaultAdapter()?.javaClass?.getMethod(
                         "setScanMode",
@@ -1114,10 +1123,9 @@ class MainActivity : CameraActivity() {
                 } catch (_: Exception) {
                 }
                 try {
-                    // [uvcpad-fix-p2] S+ ACTION_REQUEST_DISCOVERABLE needs BLUETOOTH_CONNECT: degrade with a hint when permission is missing
-                    val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
-                    intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
-                    startActivity(intent)
+                    // [uvcpad-fix-p2] S+ ACTION_REQUEST_DISCOVERABLE needs BLUETOOTH_ADVERTISE:
+                    // degrade with a hint when permission is missing (guarded above)
+                    requestDiscoverable()
                 } catch (e: SecurityException) {
                     toast(getString(R.string.bt_permission_denied))
                 }
@@ -1138,6 +1146,18 @@ class MainActivity : CameraActivity() {
             true
         }
         popup.show()
+    }
+
+    /**
+     * [uvcpad-lint] Starts the system "make discoverable" dialog.
+     * Guarded by [hasAdvertisePermission] at the call site; the annotation is only needed because
+     * lint cannot see through that helper (the SecurityException path is still kept).
+     */
+    @SuppressLint("MissingPermission")
+    private fun requestDiscoverable() {
+        val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+        intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+        startActivity(intent)
     }
 
     // ============ Touch-area alignment (uvcpad-touch-align: touch area = display area) ============
@@ -1206,10 +1226,19 @@ class MainActivity : CameraActivity() {
             val needScan = ContextCompat.checkSelfPermission(
                 this, Manifest.permission.BLUETOOTH_SCAN
             ) != PackageManager.PERMISSION_GRANTED
-            if (needConnect || needScan) {
+            // [uvcpad-lint] BLUETOOTH_ADVERTISE ("Make Discoverable") rides the same serial
+            // dialog batch as CONNECT; granting one screen avoids a second system prompt later.
+            val needAdvertise = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.BLUETOOTH_ADVERTISE
+            ) != PackageManager.PERMISSION_GRANTED
+            if (needConnect || needScan || needAdvertise) {
                 permissionDialogShown = true
                 btPermissionsLauncher.launch(
-                    arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
+                    arrayOf(
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_SCAN,
+                        Manifest.permission.BLUETOOTH_ADVERTISE
+                    )
                 )
                 return
             }
@@ -1274,6 +1303,14 @@ class MainActivity : CameraActivity() {
             true
         }
     }
+
+    /**
+     * [uvcpad-lint] BLUETOOTH_ADVERTISE guard for the "Make Discoverable" entry
+     * (S+ only; pre-S advertising is a normal install-time permission).
+     */
+    private fun hasAdvertisePermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED
 
     /**
      * [uvcpad-fix-p2] Safely reads the device name (falls back to the address without BLUETOOTH_CONNECT on S+, avoiding SecurityException)

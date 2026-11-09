@@ -16,6 +16,8 @@
     <string name="usb_permission_hint">Tap "Allow / Always allow" in the USB permission dialog, otherwise the capture card cannot be opened</string>
     <!-- Touch path (Bluetooth HID) -->
     <string name="bt_permission_denied">Bluetooth permission not granted. The pad cannot register as a HID device. Please grant it in system settings</string>
+    <!-- [uvcpad-lint] BLUETOOTH_ADVERTISE missing: actionable prompt for "Make Discoverable" -->
+    <string name="bt_advertise_permission_denied">Bluetooth advertising permission not granted. Grant it to let the PC discover this pad</string>
     <string name="location_permission_denied">Location permission not granted. Discovery on this Android version needs it; already-paired devices still work</string>
     <string name="bt_disabled_hint">Bluetooth is disabled. Please enable it to use the pad as a HID touchpad</string>
     <!-- M2 key bar (DESIGN §3.4; no keyboard settings items, Q2 ✅) -->
