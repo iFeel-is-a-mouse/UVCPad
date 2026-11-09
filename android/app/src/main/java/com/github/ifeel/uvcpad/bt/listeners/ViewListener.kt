@@ -1,5 +1,6 @@
 package com.github.ifeel.uvcpad.bt.listeners
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
 import android.content.Context
@@ -169,6 +170,9 @@ class ViewListener(
 
     // ==================== onTouch — entry point ====================
 
+    // [uvcpad-lint] ClickableViewAccessibility: clicks on this surface are forwarded to the host
+    // PC as HID reports; calling View#performClick would announce a spurious local click event.
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View?, event: MotionEvent?): Boolean {
         if (event == null || v == null) return false
 

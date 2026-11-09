@@ -28,6 +28,16 @@ class KeyBarPanel @JvmOverloads constructor(
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             onAreaTouch?.invoke()
         }
+        // [uvcpad-lint] ClickableViewAccessibility: report a tap on the bar's non-button area as a
+        // click so TalkBack gets the usual click event (no extra side effects here).
+        if (event.actionMasked == MotionEvent.ACTION_UP) {
+            performClick()
+        }
         return true // Consume all touches in the key bar area (buttons consume them first as child views)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 }

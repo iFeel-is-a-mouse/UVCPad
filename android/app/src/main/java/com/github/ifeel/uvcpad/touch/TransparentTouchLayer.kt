@@ -1,5 +1,6 @@
 package com.github.ifeel.uvcpad.touch
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Matrix
@@ -95,6 +96,10 @@ class TransparentTouchLayer @JvmOverloads constructor(
         // Intentionally empty: the touch layer is invisible by design
     }
 
+    // [uvcpad-lint] ClickableViewAccessibility: this view is a raw touch surface whose input is
+    // translated into remote HID mouse events. It has no click action of its own, so calling
+    // performClick() here would announce a bogus local click to TalkBack — nothing to add.
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         onAnyTouch?.invoke()
         val listener = gestureListener ?: return false

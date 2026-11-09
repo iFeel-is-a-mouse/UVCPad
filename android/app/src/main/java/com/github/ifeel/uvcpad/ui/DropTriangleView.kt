@@ -81,7 +81,7 @@ class DropTriangleView @JvmOverloads constructor(
             MotionEvent.ACTION_UP -> {
                 val trigger = !cancelled
                 cancelled = false
-                if (trigger) onToggle?.invoke()
+                if (trigger) performClick()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -89,6 +89,16 @@ class DropTriangleView @JvmOverloads constructor(
                 return true
             }
         }
+        return true
+    }
+
+    /**
+     * [uvcpad-lint] ClickableViewAccessibility: a tap inside the hot zone is a real click, so route
+     * it through performClick() (announces the accessibility click) and forward to [onToggle].
+     */
+    override fun performClick(): Boolean {
+        super.performClick()
+        onToggle?.invoke()
         return true
     }
 
