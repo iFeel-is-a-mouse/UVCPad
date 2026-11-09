@@ -49,7 +49,6 @@ import com.jiangdg.ausbc.base.CameraActivity
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.ICaptureCallBack
-import com.jiangdg.ausbc.render.env.RotateType
 import com.jiangdg.ausbc.utils.MediaStoreUtils
 import com.jiangdg.ausbc.widget.IAspectRatio
 import java.io.File
@@ -458,7 +457,7 @@ class MainActivity : CameraActivity() {
         val storedType = ((UvcpadPrefs(this).rotationType % 4) + 4) % 4
         rotationType = storedType
         val view = RotatableAspectRatioTextureView(this)
-        view.rotationDegrees = rotationDegrees(storedType)
+        view.rotationDegrees = RotationSpec.degrees(storedType)
         cameraView = view
         return view
     }
@@ -482,7 +481,7 @@ class MainActivity : CameraActivity() {
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
             // [uvcpad-rotate] Rotation follows the explicit rotate button (prefs.rotationType); every (re)open
             // re-applies it, so the frame is already rotated when the render session starts.
-            .setDefaultRotateType(rotateTypeOf(rotationType))
+            .setDefaultRotateType(RotationSpec.rotateTypeOf(rotationType))
             // No audio needed
             .setAudioSource(CameraRequest.AudioSource.NONE)
             // MJPEG: high frame rate, low latency
@@ -636,7 +635,7 @@ class MainActivity : CameraActivity() {
         btnCapture = findViewById(R.id.btnCapture)
         btnExit = findViewById(R.id.btnExit)
         // [uvcpad-rotate] Touch coordinates are rotated back to the unrotated frame (see TransparentTouchLayer)
-        touchLayer.displayRotationDegrees = rotationDegrees(rotationType)
+        touchLayer.displayRotationDegrees = RotationSpec.degrees(rotationType)
 
         // Triangle tap → key bar show/hide toggle (expanded→collapse; collapsing also resets the timer, DESIGN §3.3)
         dropTriangle.onToggle = { keyBarController.toggle() }
@@ -710,22 +709,11 @@ class MainActivity : CameraActivity() {
 
     // ============ [uvcpad-rotate] Explicit rotation (DESIGN §3.4) ============
 
-    /** prefs.rotationType (0..3) → display angle in degrees */
-    private fun rotationDegrees(type: Int): Int = (((type % 4) + 4) % 4) * 90
-
-    /** prefs.rotationType (0..3) → AUSBC render rotation */
-    private fun rotateTypeOf(type: Int): RotateType = when (((type % 4) + 4) % 4) {
-        1 -> RotateType.ANGLE_90
-        2 -> RotateType.ANGLE_180
-        3 -> RotateType.ANGLE_270
-        else -> RotateType.ANGLE_0
-    }
-
     /** Rotation button label: "⟳" at 0°, "⟳90°" / "⟳180°" / "⟳270°" otherwise */
     private fun updateRotateButton() {
         if (!::btnRotate.isInitialized) return
         // [uvcpad-rotate-p1] Use the normalised angle (defensive against a bad persisted value)
-        val degrees = rotationDegrees(rotationType)
+        val degrees = RotationSpec.degrees(rotationType)
         btnRotate.text = if (degrees == 0) {
             getString(R.string.keybar_rotate)
         } else {
@@ -758,9 +746,9 @@ class MainActivity : CameraActivity() {
      */
     private fun applyRotation() {
         val view = cameraView ?: return
-        view.rotationDegrees = rotationDegrees(rotationType)
+        view.rotationDegrees = RotationSpec.degrees(rotationType)
         if (::touchLayer.isInitialized) {
-            touchLayer.displayRotationDegrees = rotationDegrees(rotationType)
+            touchLayer.displayRotationDegrees = RotationSpec.degrees(rotationType)
         }
         if (resolutionReopenInFlight) {
             // [uvcpad-rotate-p1] The resolution reopen is already queued; apply the rotate restart once it completes
@@ -989,7 +977,7 @@ class MainActivity : CameraActivity() {
         updateRotateButton()
         btnRotate.setOnClickListener {
             keyBarController.resetAutoHideTimer()
-            rotationType = (rotationType + 1) % 4
+            rotationType = RotationSpec.nextType(rotationType)
             prefs.rotationType = rotationType
             updateRotateButton()
             applyRotation()

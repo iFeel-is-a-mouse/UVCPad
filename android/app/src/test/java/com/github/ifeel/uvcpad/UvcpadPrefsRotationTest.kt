@@ -70,11 +70,6 @@ class UvcpadPrefsRotationTest {
             seedRotationType(raw)
             val normalized = readRotationType()
             assertEquals("raw=$raw must normalise into 0..3", true, normalized in 0..3)
-            assertEquals(
-                "raw=$raw must equal the companion helper",
-                UvcpadPrefs.normalizeRotationType(raw),
-                normalized
-            )
         }
     }
 

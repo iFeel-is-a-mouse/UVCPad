@@ -24,6 +24,7 @@
 | v0.2.11 公开发布 | 2026-11-09 | versionCode 4；GitHub Release 上传 arm64 APK（4.19 MB）；首个可安装公开版本 |
 | 显式旋转按钮 | 2026-11-09 | commit **见 git log [uvcpad-rotate]**：按键栏新增 ⟳ 按钮（0/90/180/270 循环，`prefs.rotation_type`）；90/270 宽高比交换 + 触摸坐标反旋转；AUSBC 无运行时 surface resize → closeCamera+reopen |
 | 旋转测试基建 | 2026-11-09 | **[uvcpad-rotate-test]** 56 个 JVM 单测（Robolectric SDK 28）+ GitHub Actions：模拟输入（4 角度×多增量/多指/非正方形）与模拟输出（7 字节 HID 报告/钳制/亚像素）全绿，`./gradlew :app:testDebugUnitTest` 一条命令跑完 |
+| 旋转测试补口 | 2026-11-09 | **[uvcpad-rotate-test2]** 56 → 65 用例全绿：RotationSpec 纯逻辑收口（循环/角度/RotateType，2 个变异自检均杀死）、竖屏 1200×1600 的 90°/270° 旋转中心、`emitReport` 生产路径（SecurityException / sendReport=false / 权限守卫）；清理 3 处测试卫生问题，未覆盖盲区登记 todo.md |
 
 ## 关键 commit 对照
 

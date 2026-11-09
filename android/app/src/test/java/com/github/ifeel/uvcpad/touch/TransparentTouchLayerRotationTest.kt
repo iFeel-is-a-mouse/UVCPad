@@ -6,7 +6,6 @@ import android.view.MotionEvent
 import android.view.View
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -388,6 +387,55 @@ class TransparentTouchLayerRotationTest {
         assertEquals(1400f, point.second, 0.01f)
     }
 
+    // ==================== portrait non-square view: 1200×1600 parent ====================
+
+    @Test
+    fun portraitView1200x1600_rotatesAroundViewCentreAt90() {
+        val layer = newLayer(1200, 1600)
+        val recorder = RecordingTouchListener()
+        layer.setGestureListener(recorder)
+        layer.displayRotationDegrees = 90
+
+        val down = singleEvent(MotionEvent.ACTION_DOWN, 600f, 800f, 0L)
+        val move = singleEvent(MotionEvent.ACTION_MOVE, 1200f, 1600f, 10L)
+        try {
+            layer.dispatchTouchEvent(down)
+            layer.dispatchTouchEvent(move)
+        } finally {
+            down.recycle()
+            move.recycle()
+        }
+
+        // delta (600,800) → (dy,-dx) = (800,-600) around the true centre (600,800) → (1400,200).
+        // A square-view assumption would use min/2 = 600 for both axes and land elsewhere.
+        val point = recorder.lastPoint()
+        assertEquals(1400f, point.first, 0.01f)
+        assertEquals(200f, point.second, 0.01f)
+    }
+
+    @Test
+    fun portraitView1200x1600_rotatesAroundViewCentreAt270() {
+        val layer = newLayer(1200, 1600)
+        val recorder = RecordingTouchListener()
+        layer.setGestureListener(recorder)
+        layer.displayRotationDegrees = 270
+
+        val down = singleEvent(MotionEvent.ACTION_DOWN, 600f, 800f, 0L)
+        val move = singleEvent(MotionEvent.ACTION_MOVE, 1200f, 1600f, 10L)
+        try {
+            layer.dispatchTouchEvent(down)
+            layer.dispatchTouchEvent(move)
+        } finally {
+            down.recycle()
+            move.recycle()
+        }
+
+        // delta (600,800) → (-dy,dx) = (-800,600) around the true centre (600,800) → (-200,1400).
+        val point = recorder.lastPoint()
+        assertEquals(-200f, point.first, 0.01f)
+        assertEquals(1400f, point.second, 0.01f)
+    }
+
     // ==================== angle normalisation ====================
 
     @Test
@@ -421,7 +469,6 @@ class TransparentTouchLayerRotationTest {
     fun gestureListener_isMountedAndReceivesTheEventChain() {
         val layer = newLayer(1600, 1200)
         val recorder = RecordingTouchListener()
-        assertNotNull(recorder)
         layer.setGestureListener(recorder)
         val down = singleEvent(MotionEvent.ACTION_DOWN, 800f, 600f, 0L)
         try {

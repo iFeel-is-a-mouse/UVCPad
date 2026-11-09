@@ -74,3 +74,13 @@
 - [ ] 手势全量回归（两指滚动/双指右键/长按拖拽/双击拖拽 + 三角/按键栏边界交互，**需用户真机**）
 - [ ] 真机标定 speed 系数与 ramp（DESIGN §6.3，**需用户真机**）
 - [ ] 坐标映射调参 + 性能监控（主线程负载 / sendReport 迁移 HandlerThread 评估）
+
+### 旋转测试未覆盖缺口（[uvcpad-rotate-test2] 登记 2026-11-09）
+
+> tester 独立验证 `06f96e0`（56 用例全绿、6 个变异全部杀死）后确认的剩余盲区。本轮已补：RotationSpec 纯逻辑（循环/角度/RotateType 映射）、竖屏 1200×1600 的 90°/270° 旋转中心与坐标变换、`RelativeMouseSender.emitReport` 生产路径（SecurityException / sendReport=false / 权限守卫），并清理 3 处测试卫生问题。以下仍未受测试保护，按优先级登记。
+
+- [ ] **P2 `alignToDisplayRect`（TransparentTouchLayer）**：layoutParams 写入分支与「值不变提前返回」分支零覆盖。补法：Robolectric 中挂到 FrameLayout 父容器，断言 margin/width/height 生效，二次调用同 rect 不触发重布局（可用 shadow layout 次数或对象同一性）。
+- [ ] **P2 `onAnyTouch`（TransparentTouchLayer）**：任意触摸都应回调（按键栏自动隐藏计时重置）——当前只测了 gesture listener 收发，未断言 onAnyTouch 的触发（含无 listener 的 pass-through 分支）。
+- [ ] **P2 `migrateResolutionMode`（UvcpadPrefs）**：旧 `resolution_w/h` → 模式枚举的一次性迁移零覆盖：16:9 / 4:3 分类（含 1600×1200 归 4:3）、旧键删除、二次构造幂等。
+- [ ] **P3 `applyRotation` 竞态（MainActivity）**：`resolutionReopenInFlight` / `rotationPendingAfterResolution` / `rotationReopenInFlight` 三条交错路径（旋转中切换分辨率、reopen 中双击旋转、无相机时只持久化）无状态机级测试；需抽出可测状态机或 ActivityScenario + 可控 Handler。
+- [ ] **P3 CI 未在真实 runner 跑过**：`.github/workflows/android.yml` 已提交但从未在 GitHub Actions 执行；首次 push 后需确认 JDK 21 + Gradle 9.3.1 + Robolectric/Mockito 依赖下载与 `assembleDebug` 全绿。

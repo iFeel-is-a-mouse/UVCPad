@@ -1,7 +1,6 @@
 package com.github.ifeel.uvcpad.ui
 
 import android.app.Activity
-import android.view.View
 import android.view.View.MeasureSpec
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -174,8 +173,18 @@ class RotatableAspectRatioTextureViewTest {
     }
 
     @Test
-    fun viewIsAttachedToWindow() {
-        assertEquals(true, view.isAttachedToWindow)
-        assertEquals(View.VISIBLE, view.visibility)
+    fun viewIsLaidOutAtItsRotatedMeasuredSize() {
+        view.rotationDegrees = 90
+        applyRatio(1600, 1200)
+
+        val (width, height) = measureInSquareParent()
+        view.layout(0, 0, width, height)
+
+        // Real layout state: the view is laid out at the measured 750×1000 (rotated) rectangle.
+        assertEquals(true, view.isLaidOut)
+        assertEquals(750, width)
+        assertEquals(1000, height)
+        assertEquals(width, view.width)
+        assertEquals(height, view.height)
     }
 }
