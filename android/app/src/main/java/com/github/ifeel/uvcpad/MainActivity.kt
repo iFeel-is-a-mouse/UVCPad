@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
+import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
@@ -352,7 +353,7 @@ class MainActivity : CameraActivity() {
      */
     private fun initBluetooth(): Boolean {
         if (!checkBluetoothPermissions()) return false
-        if (BluetoothAdapter.getDefaultAdapter()?.isEnabled != true) {
+        if (defaultAdapter()?.isEnabled != true) {
             toast(getString(R.string.bt_disabled_hint))
             return false
         }
@@ -1060,11 +1061,14 @@ class MainActivity : CameraActivity() {
     private fun showDeviceSwitcher() {
         if (!::btnBt.isInitialized) return
         val popup = PopupMenu(this, btnBt, Gravity.START)
+        // [uvcpad-lint] BluetoothAdapter.getDefaultAdapter() is deprecated; take the adapter
+        // from BluetoothManager (API 18+, minSdk 28) via the shared helper.
+        val adapter = defaultAdapter()
         // [uvcpad-consistency-p3] The paired list (bondedDevices) is authoritative, pairedDevices is only a fallback:
         // the runtime cache may contain unbonded devices (never cleaned after unbonding); using the system's current paired list
         // avoids dead-device entries in the popup; without permission to read it, degrade to the runtime cache ([uvcpad-fix-p3] empty-list fallback semantics kept)
         val devices = try {
-            BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList()?.ifEmpty {
+            adapter?.bondedDevices?.toList()?.ifEmpty {
                 BluetoothController.pairedDevices.toList()
             } ?: BluetoothController.pairedDevices.toList()
         } catch (e: SecurityException) {
@@ -1111,12 +1115,12 @@ class MainActivity : CameraActivity() {
                     return@setOnMenuItemClickListener true
                 }
                 try {
-                    BluetoothAdapter.getDefaultAdapter()?.javaClass?.getMethod(
+                    adapter?.javaClass?.getMethod(
                         "setScanMode",
                         Int::class.javaPrimitiveType,
                         Int::class.javaPrimitiveType
                     )?.invoke(
-                        BluetoothAdapter.getDefaultAdapter(),
+                        adapter,
                         BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE,
                         300
                     )
@@ -1303,6 +1307,13 @@ class MainActivity : CameraActivity() {
             true
         }
     }
+
+    /**
+     * [uvcpad-lint] Local BluetoothAdapter accessor: replaces the deprecated
+     * BluetoothAdapter.getDefaultAdapter() with BluetoothManager.getAdapter().
+     */
+    private fun defaultAdapter(): BluetoothAdapter? =
+        (getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
 
     /**
      * [uvcpad-lint] BLUETOOTH_ADVERTISE guard for the "Make Discoverable" entry

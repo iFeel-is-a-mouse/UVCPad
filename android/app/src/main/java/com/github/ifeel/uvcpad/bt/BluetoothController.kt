@@ -49,10 +49,24 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     }
 
 
-    val btAdapter by lazy {
-        BluetoothAdapter.getDefaultAdapter()
-            ?: throw IllegalStateException("BluetoothAdapter unavailable")
-    }
+    /** [uvcpad-lint] Cached adapter obtained from BluetoothManager (getDefaultAdapter() is deprecated). */
+    @Volatile
+    private var cachedAdapter: BluetoothAdapter? = null
+
+    /**
+     * [uvcpad-lint] BluetoothAdapter.getDefaultAdapter() is deprecated on API 31+: resolve it via
+     * BluetoothManager instead. appContext is injected by [init] before any operation that uses
+     * the adapter (all call paths run after init), so the same failure semantics are kept.
+     */
+    val btAdapter: BluetoothAdapter
+        get() {
+            cachedAdapter?.let { return it }
+            val ctx = appContext ?: throw IllegalStateException("BluetoothAdapter unavailable")
+            val adapter = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+                ?: throw IllegalStateException("BluetoothAdapter unavailable")
+            cachedAdapter = adapter
+            return adapter
+        }
     var btHid: BluetoothHidDevice? = null
     var hostDevice: BluetoothDevice? = null
     var autoPairFlag = false

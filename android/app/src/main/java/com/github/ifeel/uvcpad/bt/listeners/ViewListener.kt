@@ -3,17 +3,18 @@ package com.github.ifeel.uvcpad.bt.listeners
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
-import androidx.core.view.GestureDetectorCompat
 import com.github.ifeel.uvcpad.bt.senders.RelativeMouseSender
 import kotlin.math.roundToInt
 
@@ -42,6 +43,18 @@ class ViewListener(
     // ==================== Haptics ====================
 
     private var vibrator: Vibrator? = null
+
+    /**
+     * [uvcpad-lint] VIBRATOR_SERVICE is deprecated on API 31+: use VibratorManager there and keep
+     * the old service lookup for API 28–30 (minSdk 28).
+     */
+    private fun vibratorOf(context: Context): Vibrator? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
 
     // ==================== State ====================
 
@@ -100,7 +113,7 @@ class ViewListener(
 
     // ==================== Gesture detectors (lazy-init on first touch) ====================
 
-    private var gestureDetector: GestureDetectorCompat? = null
+    private var gestureDetector: GestureDetector? = null
     private var scaleDetector: ScaleGestureDetector? = null
 
     // ==================== Speed coefficients (set externally) ====================
@@ -161,8 +174,9 @@ class ViewListener(
 
         // Lazy-init detectors
         if (gestureDetector == null) {
-            vibrator = v.context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            gestureDetector = GestureDetectorCompat(v.context, GestureListener())
+            vibrator = vibratorOf(v.context)
+            // [uvcpad-lint] minSdk 28 → platform GestureDetector is enough; GestureDetectorCompat is deprecated.
+            gestureDetector = GestureDetector(v.context, GestureListener())
         }
         if (scaleDetector == null) {
             scaleDetector = ScaleGestureDetector(v.context, ScaleListener())
