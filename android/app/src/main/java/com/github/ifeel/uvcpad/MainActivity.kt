@@ -1251,6 +1251,7 @@ class MainActivity : CameraActivity() {
             true
         }
         DebugBridge.toggleSelfTest = { runOnUiThread { toggleSelfTest() } }
+        DebugBridge.injectGesture = { seq -> runOnUiThread { injectGesture(seq) } }
     }
 
     /** Removes every debug listener/view so nothing survives onDestroy (no leaked handler callbacks). */
@@ -1403,6 +1404,22 @@ class MainActivity : CameraActivity() {
             hidAppRegistered = BluetoothController.hidAppRegistered,
             pairedDeviceAvailable = BluetoothController.hostDevice != null || paired
         )
+    }
+
+    /** [uvcpad-t0-inject] Replays an adb-supplied gesture through the real touch layer. */
+    private fun injectGesture(sequence: String) {
+        if (!BuildConfig.DEBUG) return
+        when (val result = com.github.ifeel.uvcpad.diag.GestureSequenceParser.parse(sequence)) {
+            is com.github.ifeel.uvcpad.diag.ParseResult.Success -> {
+                val events = com.github.ifeel.uvcpad.diag.GestureInjector.inject(touchLayer, result.steps)
+                Diag.touch("inject steps=${result.steps.size} events=$events")
+                toast("Gesture injected: ${result.steps.size} steps / $events events")
+            }
+            is com.github.ifeel.uvcpad.diag.ParseResult.Failure -> {
+                Diag.touch("inject invalid reason=${result.reason}")
+                toast("Gesture invalid: ${result.reason}")
+            }
+        }
     }
 
     /** Registers the NV21 frame probe on the current AUSBC camera (idempotent across reopens). */

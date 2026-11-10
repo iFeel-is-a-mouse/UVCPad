@@ -11,6 +11,7 @@
             <intent-filter>
                 <action android:name="com.github.ifeel.uvcpad.DEBUG_HUD" />
                 <action android:name="com.github.ifeel.uvcpad.DEBUG_SELFTEST" />
+                <action android:name="com.github.ifeel.uvcpad.DEBUG_GESTURE" />
             </intent-filter>
         </receiver>
     </application>

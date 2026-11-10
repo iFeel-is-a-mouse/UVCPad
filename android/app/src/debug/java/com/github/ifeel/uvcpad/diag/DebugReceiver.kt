@@ -26,6 +26,15 @@ class DebugReceiver : BroadcastReceiver() {
                 Diag.ui("broadcast=DEBUG_SELFTEST")
                 DebugBridge.toggleSelfTest?.invoke()
             }
+            ACTION_GESTURE -> {
+                val seq = intent.getStringExtra(EXTRA_SEQ)
+                Diag.touch("broadcast=DEBUG_GESTURE seq=$seq")
+                if (seq.isNullOrBlank()) {
+                    Diag.touch("broadcast=DEBUG_GESTURE invalid=missing seq")
+                } else {
+                    DebugBridge.injectGesture?.invoke(seq)
+                }
+            }
             else -> Log.w(TAG, "unknown action: ${intent?.action}")
         }
     }
@@ -34,5 +43,7 @@ class DebugReceiver : BroadcastReceiver() {
         private const val TAG = "UvcpadDebugReceiver"
         const val ACTION_HUD = "com.github.ifeel.uvcpad.DEBUG_HUD"
         const val ACTION_SELFTEST = "com.github.ifeel.uvcpad.DEBUG_SELFTEST"
+        const val ACTION_GESTURE = "com.github.ifeel.uvcpad.DEBUG_GESTURE"
+        const val EXTRA_SEQ = "seq"
     }
 }
