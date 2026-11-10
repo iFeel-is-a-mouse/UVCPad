@@ -44,4 +44,6 @@
     <string name="keybar_btn_mode_16_9">16:9</string>
     <string name="keybar_btn_capture_icon">📷</string>
     <string name="keybar_btn_exit_icon">⏻</string>
+    <!-- [uvcpad-t0-selftest] Panel header + formatted check list (placeholder = SelfTest.format output) -->
+    <string name="selftest_line">SELF-TEST (auto 1s)\n%1$s</string>
 </resources>
