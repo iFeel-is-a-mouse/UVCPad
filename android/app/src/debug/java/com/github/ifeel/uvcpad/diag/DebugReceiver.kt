@@ -22,6 +22,10 @@ class DebugReceiver : BroadcastReceiver() {
                 Diag.ui("broadcast=DEBUG_HUD")
                 DebugBridge.toggleHud?.invoke()
             }
+            ACTION_SELFTEST -> {
+                Diag.ui("broadcast=DEBUG_SELFTEST")
+                DebugBridge.toggleSelfTest?.invoke()
+            }
             else -> Log.w(TAG, "unknown action: ${intent?.action}")
         }
     }
@@ -29,5 +33,6 @@ class DebugReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "UvcpadDebugReceiver"
         const val ACTION_HUD = "com.github.ifeel.uvcpad.DEBUG_HUD"
+        const val ACTION_SELFTEST = "com.github.ifeel.uvcpad.DEBUG_SELFTEST"
     }
 }

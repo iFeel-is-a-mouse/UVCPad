@@ -205,6 +205,7 @@ class MainActivity : CameraActivity() {
 
     // ==================== [uvcpad-t0] Debug diagnostics (debug builds only) ====================
     private var hudOverlay: HudOverlay? = null
+    private var selfTestPanel: com.github.ifeel.uvcpad.diag.SelfTestPanel? = null
     private var cameraStateName = "IDLE"
     private var probedCamera: MultiCameraClient.ICamera? = null
 
@@ -1243,6 +1244,13 @@ class MainActivity : CameraActivity() {
     private fun setupDebugDiagnostics() {
         dropTriangle.onLongPress = { toggleHud() }
         DebugBridge.toggleHud = { runOnUiThread { toggleHud() } }
+        // Long-press the auto-pair button opens the 12-row self-test panel (requested entry point).
+        btnAutoPair.setOnLongClickListener {
+            keyBarController.resetAutoHideTimer()
+            toggleSelfTest()
+            true
+        }
+        DebugBridge.toggleSelfTest = { runOnUiThread { toggleSelfTest() } }
     }
 
     /** Removes every debug listener/view so nothing survives onDestroy (no leaked handler callbacks). */
@@ -1257,6 +1265,14 @@ class MainActivity : CameraActivity() {
         }
         hudOverlay = null
         Diag.hudEnabled = false
+        selfTestPanel?.let {
+            it.stop()
+            (rootLayout as? ViewGroup)?.removeView(it)
+        }
+        selfTestPanel = null
+        if (::btnAutoPair.isInitialized) {
+            btnAutoPair.setOnLongClickListener(null)
+        }
         detachFrameProbe()
     }
 
@@ -1320,6 +1336,72 @@ class MainActivity : CameraActivity() {
             btState = btState,
             btName = btDeviceName(host).ifEmpty { "-" },
             touchBounds = bounds
+        )
+    }
+
+    /** Self-test panel toggle (long-press auto-pair button or adb broadcast DEBUG_SELFTEST). */
+    private fun toggleSelfTest() {
+        if (!BuildConfig.DEBUG) return
+        val existing = selfTestPanel
+        if (existing != null) {
+            existing.stop()
+            (rootLayout as? ViewGroup)?.removeView(existing)
+            selfTestPanel = null
+            Diag.ui("selftest=off")
+            return
+        }
+        val root = rootLayout as? ViewGroup ?: return
+        val panel = com.github.ifeel.uvcpad.diag.SelfTestPanel(this)
+        panel.bind { selfTestSnapshot() }
+        val lp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            topMargin = dp(64)
+            marginStart = dp(12)
+        }
+        root.addView(panel, lp)
+        panel.start()
+        selfTestPanel = panel
+        Diag.ui("selftest=on")
+    }
+
+    /** Collects raw platform facts; interpretation lives in the pure [SelfTest] object. */
+    private fun selfTestSnapshot(): com.github.ifeel.uvcpad.diag.SelfTestSnapshot {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
+        val devices = try {
+            getDeviceList() ?: emptyList()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        val adapter = try {
+            defaultAdapter()
+        } catch (_: Throwable) {
+            null
+        }
+        val paired = try {
+            adapter?.bondedDevices?.isNotEmpty() == true
+        } catch (_: SecurityException) {
+            false
+        }
+        val sPlus = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        fun granted(permission: String): Boolean =
+            checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+
+        return com.github.ifeel.uvcpad.diag.SelfTestSnapshot(
+            usbHostSupported = packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST),
+            captureCardAttached = devices.isNotEmpty(),
+            cameraPermissionGranted = granted(Manifest.permission.CAMERA),
+            usbPermissionGranted = devices.any { usbManager?.hasPermission(it) == true },
+            cameraOpened = isCameraOpened(),
+            btAdapterEnabled = adapter?.isEnabled == true,
+            btConnectGranted = !sPlus || granted(Manifest.permission.BLUETOOTH_CONNECT),
+            btScanGranted = !sPlus || granted(Manifest.permission.BLUETOOTH_SCAN),
+            btAdvertiseGranted = !sPlus || granted(Manifest.permission.BLUETOOTH_ADVERTISE),
+            hidProxyAvailable = BluetoothController.btHid != null,
+            hidAppRegistered = BluetoothController.hidAppRegistered,
+            pairedDeviceAvailable = BluetoothController.hostDevice != null || paired
         )
     }
 

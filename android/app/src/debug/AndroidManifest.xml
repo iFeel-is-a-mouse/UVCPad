@@ -10,6 +10,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.github.ifeel.uvcpad.DEBUG_HUD" />
+                <action android:name="com.github.ifeel.uvcpad.DEBUG_SELFTEST" />
             </intent-filter>
         </receiver>
     </application>

@@ -72,6 +72,10 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
     var hostDevice: BluetoothDevice? = null
     var autoPairFlag = false
 
+    /** [uvcpad-t0-selftest] True while the HID app is registered (driven by onAppStatusChanged). */
+    @Volatile
+    var hidAppRegistered: Boolean = false
+
     /**
      * [uvcpad-fix-p1] Manual-disconnect marker: set to true when btnBt tap disconnects, suppressing the three auto-connect paths
      * (onConnectionStateChanged DISCONNECTED auto-reconnect / startAutoReconnect loop /
@@ -311,6 +315,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 initInProgress = false
                 initTimeoutHandler?.removeCallbacksAndMessages(null)
                 btHid = null
+                hidAppRegistered = false
                 // [uvcpad-p2-retry-cleanup] Reset the registerApp retry marker + cancel the pending 3s retry:
                 // otherwise the leftover Runnable holds the old proxy and, failing the retry 3s later, sets btHid=null, harming the new proxy after reconnect
                 registerAppRetried = false
@@ -347,6 +352,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                 return
             }
             this.btHid = btHid
+            hidAppRegistered = false
             Diag.bt("state=SERVICE_CONNECTED profile=HID_DEVICE")
             // Set the discoverable name to "uvcpad" so PCs see it instead of the
             // device model name (e.g. "MatePad Paper"). Must be re-applied on every
@@ -512,8 +518,9 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
             Log.d(TAG, "onAppStatusChanged: registered=$registered, device=$pluggedDevice")
             
             if (registered) {
-                Diag.bt("hid_app_registered=true device=${deviceName(pluggedDevice)}")
+                hidAppRegistered = true
                 mpluggedDevice = pluggedDevice
+                Diag.bt("hid_app_registered=true device=${deviceName(pluggedDevice)}")
                 pluggedDevice?.let { dev ->
                     if (pairedDevices.none { it.address == dev.address }) {
                         pairedDevices.add(dev)
@@ -539,6 +546,7 @@ object BluetoothController: BluetoothHidDevice.Callback(), BluetoothProfile.Serv
                     }
                 }
             } else {
+                hidAppRegistered = false
                 Diag.bt("hid_app_registered=false action=re-register")
                 updateStatus("HID app unregistered, re-registering...")
                 btHid?.let { hid ->
