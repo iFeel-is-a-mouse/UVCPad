@@ -31,6 +31,7 @@ import android.view.WindowManager
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.FrameLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -40,7 +41,10 @@ import com.github.ifeel.uvcpad.bt.BluetoothController
 import com.github.ifeel.uvcpad.bt.SpeedLevel
 import com.github.ifeel.uvcpad.bt.listeners.ViewListener
 import com.github.ifeel.uvcpad.bt.senders.RelativeMouseSender
+import com.github.ifeel.uvcpad.diag.DebugBridge
 import com.github.ifeel.uvcpad.diag.Diag
+import com.github.ifeel.uvcpad.diag.HudModel
+import com.github.ifeel.uvcpad.diag.HudOverlay
 import com.github.ifeel.uvcpad.touch.TransparentTouchLayer
 import com.github.ifeel.uvcpad.ui.DropTriangleView
 import com.github.ifeel.uvcpad.ui.KeyBarController
@@ -51,6 +55,7 @@ import com.jiangdg.ausbc.base.CameraActivity
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.ICaptureCallBack
+import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.jiangdg.ausbc.utils.MediaStoreUtils
 import com.jiangdg.ausbc.widget.IAspectRatio
 import java.io.File
@@ -108,6 +113,11 @@ class MainActivity : CameraActivity() {
     // remembered value (first launch with no memory = stays at the 4:3 default; with a remembered choice, the previous size is restored).
     private var currentModeW = MODE_4BY3_W
     private var currentModeH = MODE_4BY3_H
+
+    // [uvcpad-t0-hud] Last resolution requested by the user (survives the OPENED read-back that
+    // overwrites currentModeW/H with the actually negotiated size), so the HUD can show req vs act.
+    private var lastRequestW = MODE_4BY3_W
+    private var lastRequestH = MODE_4BY3_H
 
     /**
      * Resolution-switch request target (AUSBC 3.6.0 updateResolution is asynchronous: closeCamera + reopens the camera 1s later,
@@ -192,6 +202,23 @@ class MainActivity : CameraActivity() {
 
     /** Current gesture-engine reference: the speed button updates mouseSpeed/scrollSpeed in real time (DESIGN §3.4); created on connect, nulled on disconnect */
     private var viewListener: ViewListener? = null
+
+    // ==================== [uvcpad-t0] Debug diagnostics (debug builds only) ====================
+    private var hudOverlay: HudOverlay? = null
+    private var cameraStateName = "IDLE"
+    private var probedCamera: MultiCameraClient.ICamera? = null
+
+    /** AUSBC NV21 preview callback: one mark per delivered frame (fps sliding window). */
+    private val frameProbe = object : IPreviewDataCallBack {
+        override fun onPreviewData(
+            data: ByteArray?,
+            width: Int,
+            height: Int,
+            format: IPreviewDataCallBack.DataFormat
+        ) {
+            Diag.onFrame()
+        }
+    }
 
     // Whether the USB permission guidance hint is currently shown: avoids spamming toasts on
     // every attach intent; cleared as soon as the user grants permission (from hdmi2mp verbatim)
@@ -302,6 +329,8 @@ class MainActivity : CameraActivity() {
         // then OPENED reads back the actually negotiated size — if the first 4:3 request falls back because EDID does not support it, it is likewise shown truthfully and notified.
         pendingModeW = currentModeW
         pendingModeH = currentModeH
+        lastRequestW = currentModeW
+        lastRequestH = currentModeH
         currentSpeedLevel = SpeedLevel.forLevel(prefs.speedLevel)
         // Auto-pair toggle (KeysJoy pattern): sync flag + start the reconnect loop when enabled
         BluetoothController.autoPairFlag = prefs.autoPair
@@ -327,6 +356,9 @@ class MainActivity : CameraActivity() {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         bindViews()
+        if (BuildConfig.DEBUG) {
+            setupDebugDiagnostics()
+        }
         // Serial permission requests: camera first (required for UVC); BT (S+), location (≤30)
         // and storage (23~28) follow inside the result callbacks so the dialogs never stack
         requestPermissionsSequentially()
@@ -409,6 +441,7 @@ class MainActivity : CameraActivity() {
 
     override fun onDestroy() {
         Diag.stopPeriodic()
+        teardownDebugDiagnostics()
         // DESIGN §3.7: stop auto-reconnect + clear the status listener + drop the crash-dialog ref
         BluetoothController.stopAutoReconnect()
         // [uvcpad-fix-p1] Clear all singleton callbacks: deviceListener/disconnectListener/statusListener nulled together,
@@ -515,6 +548,8 @@ class MainActivity : CameraActivity() {
             try {
                 when (code) {
                     ICameraStateCallBack.State.OPENED -> {
+                        cameraStateName = "OPENED"
+                        attachFrameProbe()
                         val actual = getCurrentPreviewSize()
                         Diag.cam(
                             "state=OPENED actual=${actual?.width ?: -1}x${actual?.height ?: -1}" +
@@ -599,6 +634,7 @@ class MainActivity : CameraActivity() {
                         }
                     }
                     ICameraStateCallBack.State.CLOSED -> {
+                        cameraStateName = "CLOSED"
                         Diag.cam("state=CLOSED pending=${pendingModeW}x$pendingModeH")
                         // [uvcpad-consistency-p3] Unplug notification: CLOSED with no resolution-switch request in progress
                         // (pending cleared) = capture card unplugged/abnormally closed → notify via errorText; the CLOSED on the resolution-switch path
@@ -609,6 +645,7 @@ class MainActivity : CameraActivity() {
                         }
                     }
                     ICameraStateCallBack.State.ERROR -> {
+                        cameraStateName = "ERROR"
                         Diag.cam("state=ERROR msg=${msg ?: "unknown"}")
                         // [uvcpad-rotate] A failed rotate-reopen must not leave the in-flight marker behind
                         rotationReopenInFlight = false
@@ -692,6 +729,8 @@ class MainActivity : CameraActivity() {
         // taking effect with a plugged-in card depends on getCameraRequest()
         currentModeW = width
         currentModeH = height
+        lastRequestW = width
+        lastRequestH = height
         Diag.cam("mode_request w=$width h=$height mode=${if (mode == UvcpadPrefs.MODE_16_9) "16:9" else "4:3"}")
         prefs.resolutionMode = mode
         // [uvcpad-rotate-p1] A rotate-triggered restart owns the session right now (closed, reopen queued): that reopen
@@ -772,6 +811,8 @@ class MainActivity : CameraActivity() {
      */
     private fun applyRotation() {
         val view = cameraView ?: return
+        lastRequestW = currentModeW
+        lastRequestH = currentModeH
         Diag.cam(
             "rotation_apply deg=${RotationSpec.degrees(rotationType)}" +
                 " resolution_in_flight=$resolutionReopenInFlight camera_open=${isCameraOpened()}"
@@ -1191,6 +1232,124 @@ class MainActivity : CameraActivity() {
         intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
         startActivity(intent)
     }
+
+    // ============ [uvcpad-t0] Debug diagnostics (all entry points debug-only) ============
+
+    /**
+     * Installs the debug-only entries: long-press on the drop triangle toggles the HUD;
+     * the debug broadcast receiver (src/debug manifest) reaches the same callbacks through
+     * [DebugBridge]. Release builds never call this (guarded by BuildConfig.DEBUG).
+     */
+    private fun setupDebugDiagnostics() {
+        dropTriangle.onLongPress = { toggleHud() }
+        DebugBridge.toggleHud = { runOnUiThread { toggleHud() } }
+    }
+
+    /** Removes every debug listener/view so nothing survives onDestroy (no leaked handler callbacks). */
+    private fun teardownDebugDiagnostics() {
+        DebugBridge.clear()
+        if (::dropTriangle.isInitialized) {
+            dropTriangle.onLongPress = null
+        }
+        hudOverlay?.let {
+            it.stop()
+            (rootLayout as? ViewGroup)?.removeView(it)
+        }
+        hudOverlay = null
+        Diag.hudEnabled = false
+        detachFrameProbe()
+    }
+
+    /** HUD toggle (long-press triangle or adb broadcast DEBUG_HUD). */
+    private fun toggleHud() {
+        if (!BuildConfig.DEBUG) return
+        val existing = hudOverlay
+        if (existing != null) {
+            existing.stop()
+            (rootLayout as? ViewGroup)?.removeView(existing)
+            hudOverlay = null
+            Diag.hudEnabled = false
+            Diag.ui("hud=off")
+            return
+        }
+        val root = rootLayout as? ViewGroup ?: return
+        val hud = HudOverlay(this)
+        hud.bind { hudModel() }
+        val lp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            topMargin = dp(64)
+            marginEnd = dp(8)
+        }
+        root.addView(hud, lp)
+        hud.start()
+        hudOverlay = hud
+        Diag.hudEnabled = true
+        Diag.ui("hud=on")
+    }
+
+    /** Snapshot for the HUD (read on the main thread once per second). */
+    private fun hudModel(): HudModel {
+        val actual = try {
+            getCurrentPreviewSize()
+        } catch (_: Throwable) {
+            null
+        }
+        val host = BluetoothController.hostDevice
+        val btState = when {
+            host != null -> "CONNECTED"
+            BluetoothController.btHid != null -> "READY"
+            else -> "OFF"
+        }
+        val bounds = if (::touchLayer.isInitialized) {
+            "${touchLayer.x.toInt()},${touchLayer.y.toInt()} ${touchLayer.width}x${touchLayer.height}"
+        } else {
+            "0,0 0x0"
+        }
+        return HudModel(
+            requestedW = if (pendingModeW > 0) pendingModeW else lastRequestW,
+            requestedH = if (pendingModeH > 0) pendingModeH else lastRequestH,
+            actualW = actual?.width ?: currentModeW,
+            actualH = actual?.height ?: currentModeH,
+            rotationDegrees = RotationSpec.degrees(rotationType),
+            cameraState = cameraStateName,
+            fps = Diag.fps(),
+            hidRate = Diag.hidRate(),
+            btState = btState,
+            btName = btDeviceName(host).ifEmpty { "-" },
+            touchBounds = bounds
+        )
+    }
+
+    /** Registers the NV21 frame probe on the current AUSBC camera (idempotent across reopens). */
+    private fun attachFrameProbe() {
+        if (!BuildConfig.DEBUG) return
+        try {
+            val camera = getCurrentCamera() ?: return
+            if (probedCamera !== camera) {
+                probedCamera?.removePreviewDataCallBack(frameProbe)
+                probedCamera = camera
+            }
+            camera.removePreviewDataCallBack(frameProbe)
+            camera.addPreviewDataCallBack(frameProbe)
+            Diag.cam("preview_probe=attached")
+        } catch (e: Throwable) {
+            Diag.cam("preview_probe=FAILED reason=${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    private fun detachFrameProbe() {
+        try {
+            probedCamera?.removePreviewDataCallBack(frameProbe)
+        } catch (_: Throwable) {
+            // Camera may already be released while the Activity is going away.
+        }
+        probedCamera = null
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     // ============ Touch-area alignment (uvcpad-touch-align: touch area = display area) ============
 

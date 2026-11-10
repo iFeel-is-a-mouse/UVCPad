@@ -29,8 +29,25 @@ class DropTriangleView @JvmOverloads constructor(
     /** Lift callback inside the hot zone: MainActivity uses it to toggle the key bar (DESIGN §3.3) */
     var onToggle: (() -> Unit)? = null
 
+    /**
+     * [uvcpad-t0-hud] Long-press callback on the triangle. MainActivity wires it to the debug HUD
+     * toggle only in debug builds; release leaves it null, so a long press behaves exactly like the
+     * previous short tap (performClick → toggle key bar) after the finger lifts.
+     */
+    var onLongPress: (() -> Unit)? = null
+
     /** Set to true once ACTION_MOVE leaves the hot zone: ACTION_UP no longer triggers toggle */
     private var cancelled = false
+
+    /** True once the long-press callback fired: the following ACTION_UP must not toggle the key bar */
+    private var longPressFired = false
+
+    private val longPressRunnable = Runnable {
+        if (!cancelled && onLongPress != null) {
+            longPressFired = true
+            onLongPress?.invoke()
+        }
+    }
 
     private val trianglePath = Path()
 
@@ -71,6 +88,9 @@ class DropTriangleView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 cancelled = false
+                longPressFired = false
+                removeCallbacks(longPressRunnable)
+                postDelayed(longPressRunnable, LONG_PRESS_MS)
                 return true // Consume: the event stream belongs to the triangle, does not penetrate the touch layer
             }
             MotionEvent.ACTION_MOVE -> {
@@ -79,13 +99,17 @@ class DropTriangleView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val trigger = !cancelled
+                removeCallbacks(longPressRunnable)
+                val trigger = !cancelled && !longPressFired
                 cancelled = false
+                longPressFired = false
                 if (trigger) performClick()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(longPressRunnable)
                 cancelled = true
+                longPressFired = false
                 return true
             }
         }
@@ -108,4 +132,13 @@ class DropTriangleView @JvmOverloads constructor(
 
     private fun dp(v: Float): Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(longPressRunnable)
+        super.onDetachedFromWindow()
+    }
+
+    companion object {
+        private const val LONG_PRESS_MS = 600L
+    }
 }

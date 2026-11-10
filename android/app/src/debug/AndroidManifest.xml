@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [uvcpad-t0] Debug-only diagnostics entry points.
+     This manifest is merged into debug builds only; release builds never declare the receiver
+     (and the DebugReceiver class itself lives in src/debug, so it is not even compiled). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <receiver
+            android:name=".diag.DebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.github.ifeel.uvcpad.DEBUG_HUD" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>
