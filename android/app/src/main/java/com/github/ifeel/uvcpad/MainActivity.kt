@@ -40,6 +40,7 @@ import com.github.ifeel.uvcpad.bt.BluetoothController
 import com.github.ifeel.uvcpad.bt.SpeedLevel
 import com.github.ifeel.uvcpad.bt.listeners.ViewListener
 import com.github.ifeel.uvcpad.bt.senders.RelativeMouseSender
+import com.github.ifeel.uvcpad.diag.Diag
 import com.github.ifeel.uvcpad.touch.TransparentTouchLayer
 import com.github.ifeel.uvcpad.ui.DropTriangleView
 import com.github.ifeel.uvcpad.ui.KeyBarController
@@ -274,6 +275,8 @@ class MainActivity : CameraActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // [uvcpad-t0] One HID-rate summary per second (debug builds only; no-op in release).
+        Diag.startPeriodic()
         // Register the active Activity reference for the global crash self-capture (lets CrashHandler show the full-screen crash dialog)
         CrashHandler.setActiveActivity(this)
         prefs = UvcpadPrefs(this)
@@ -405,6 +408,7 @@ class MainActivity : CameraActivity() {
     }
 
     override fun onDestroy() {
+        Diag.stopPeriodic()
         // DESIGN §3.7: stop auto-reconnect + clear the status listener + drop the crash-dialog ref
         BluetoothController.stopAutoReconnect()
         // [uvcpad-fix-p1] Clear all singleton callbacks: deviceListener/disconnectListener/statusListener nulled together,
@@ -512,6 +516,10 @@ class MainActivity : CameraActivity() {
                 when (code) {
                     ICameraStateCallBack.State.OPENED -> {
                         val actual = getCurrentPreviewSize()
+                        Diag.cam(
+                            "state=OPENED actual=${actual?.width ?: -1}x${actual?.height ?: -1}" +
+                                " requested=${pendingModeW}x$pendingModeH rot=${RotationSpec.degrees(rotationType)}"
+                        )
                         if (actual != null) {
                             // Use the camera's actually negotiated size as truth: AUSBC falls back to the closest supported size
                             // (e.g. 4:3 bucket 1872×1404 falls back to 1920×1080 on devices without that resolution),
@@ -529,12 +537,20 @@ class MainActivity : CameraActivity() {
                         // negotiation-failure fallback (AUSBC falls back via getSuitableSize nearest width, see the research report)
                         if (requested && actual != null) {
                             if (actual.width != pendingModeW || actual.height != pendingModeH) {
+                                Diag.cam(
+                                    "resolution_result=FALLBACK requested=${pendingModeW}x$pendingModeH" +
+                                        " negotiated=${actual.width}x${actual.height}"
+                                )
                                 Log.w(
                                     TAG,
                                     "resolution fallback: requested ${pendingModeW}x$pendingModeH" +
                                         ", negotiated ${actual.width}x${actual.height}"
                                 )
                             } else {
+                                Diag.cam(
+                                    "resolution_result=OK requested=${pendingModeW}x$pendingModeH" +
+                                        " negotiated=${actual.width}x${actual.height}"
+                                )
                                 Log.i(
                                     TAG,
                                     "resolution negotiated OK: ${actual.width}x${actual.height}"
@@ -583,6 +599,7 @@ class MainActivity : CameraActivity() {
                         }
                     }
                     ICameraStateCallBack.State.CLOSED -> {
+                        Diag.cam("state=CLOSED pending=${pendingModeW}x$pendingModeH")
                         // [uvcpad-consistency-p3] Unplug notification: CLOSED with no resolution-switch request in progress
                         // (pending cleared) = capture card unplugged/abnormally closed → notify via errorText; the CLOSED on the resolution-switch path
                         // is the normal intermediate state of closeCamera (pending non-zero, the subsequent OPENED clears the error),
@@ -592,6 +609,7 @@ class MainActivity : CameraActivity() {
                         }
                     }
                     ICameraStateCallBack.State.ERROR -> {
+                        Diag.cam("state=ERROR msg=${msg ?: "unknown"}")
                         // [uvcpad-rotate] A failed rotate-reopen must not leave the in-flight marker behind
                         rotationReopenInFlight = false
                         // [uvcpad-rotate-p1] Same for the resolution window: a deferred rotation cannot be replayed
@@ -674,6 +692,7 @@ class MainActivity : CameraActivity() {
         // taking effect with a plugged-in card depends on getCameraRequest()
         currentModeW = width
         currentModeH = height
+        Diag.cam("mode_request w=$width h=$height mode=${if (mode == UvcpadPrefs.MODE_16_9) "16:9" else "4:3"}")
         prefs.resolutionMode = mode
         // [uvcpad-rotate-p1] A rotate-triggered restart owns the session right now (closed, reopen queued): that reopen
         // rebuilds the request through getCameraRequest(), so it already carries the new size + rotation. Starting
@@ -753,6 +772,10 @@ class MainActivity : CameraActivity() {
      */
     private fun applyRotation() {
         val view = cameraView ?: return
+        Diag.cam(
+            "rotation_apply deg=${RotationSpec.degrees(rotationType)}" +
+                " resolution_in_flight=$resolutionReopenInFlight camera_open=${isCameraOpened()}"
+        )
         view.rotationDegrees = RotationSpec.degrees(rotationType)
         if (::touchLayer.isInitialized) {
             touchLayer.displayRotationDegrees = RotationSpec.degrees(rotationType)
@@ -986,6 +1009,7 @@ class MainActivity : CameraActivity() {
             keyBarController.resetAutoHideTimer()
             rotationType = RotationSpec.nextType(rotationType)
             prefs.rotationType = rotationType
+            Diag.cam("rotation_button deg=${RotationSpec.degrees(rotationType)}")
             updateRotateButton()
             applyRotation()
         }

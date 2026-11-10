@@ -17,6 +17,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import com.github.ifeel.uvcpad.bt.senders.RelativeMouseSender
+import com.github.ifeel.uvcpad.diag.Diag
 import kotlin.math.roundToInt
 
 /**
@@ -382,6 +383,9 @@ class ViewListener(
                         try {
                             rMouseSender.mouseReport.reset()
                             hidDevice.sendReport(host, 4, rMouseSender.mouseReport.bytes)
+                            // [uvcpad-t0] This wake burst bypasses RelativeMouseSender, so count it here
+                            // too (the HID rate is defined as sendReport calls/s).
+                            Diag.onHidReportSent()
                         } catch (e: SecurityException) {
                             // BLUETOOTH_CONNECT revoked mid-session: drop the wake burst
                         }

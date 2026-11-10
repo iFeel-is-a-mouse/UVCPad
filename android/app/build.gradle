@@ -52,6 +52,13 @@ android {
         disable 'ChromeOsAbiSupport'
     }
 
+    // [uvcpad-t0] Diagnostics entry points are guarded by BuildConfig.DEBUG (AGP 8 disables
+    // BuildConfig generation by default), so debug-only HUD / self-test / gesture injection can
+    // never activate in a release build.
+    buildFeatures {
+        buildConfig true
+    }
+
     // [uvcpad-rotate-test] JVM unit tests run on Robolectric with the app's real resources
     // (strings/theme parsed from res/), so the rotation tests need no device/emulator/capture card.
     testOptions {

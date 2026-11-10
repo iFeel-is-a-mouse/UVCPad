@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.Log
 import com.github.ifeel.uvcpad.bt.BluetoothController
 import com.github.ifeel.uvcpad.bt.reports.ScrollableTrackpadMouseReport
+import com.github.ifeel.uvcpad.diag.Diag
 import java.nio.ByteBuffer
 
 @Suppress("MemberVisibilityCanBePrivate")
@@ -46,6 +47,19 @@ open class RelativeMouseSender(
 
     protected open fun sendMouse() {
         if (!emitReport(ScrollableTrackpadMouseReport.ID, mouseReport.bytes)) return
+        // [uvcpad-t0] Report-rate counter (one summary/s in Diag) + HUD-only per-report hex.
+        val dx = ((mouseReport.dxMsb.toInt() shl 8) or (mouseReport.dxLsb.toInt() and 0xFF)).toShort().toInt()
+        val dy = ((mouseReport.dyMsb.toInt() shl 8) or (mouseReport.dyLsb.toInt() and 0xFF)).toShort().toInt()
+        val buttons = (if (mouseReport.leftButton) 1 else 0) or (if (mouseReport.rightButton) 2 else 0)
+        Diag.onHidReportSent()
+        Diag.hidReport(
+            ScrollableTrackpadMouseReport.ID,
+            mouseReport.bytes,
+            dx,
+            dy,
+            buttons,
+            (mouseReport.vScroll.toInt() shl 8) or (mouseReport.hScroll.toInt() and 0xFF)
+        )
         // Zero movement/scroll fields after send; preserve button state for drag support
         mouseReport.dxLsb = 0
         mouseReport.dxMsb = 0
